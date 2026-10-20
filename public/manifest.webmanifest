@@ -1,0 +1,17 @@
+{
+  "name": "Chůvička",
+  "short_name": "Chůvička",
+  "description": "Telefon u dítěte hlídá zvuk, rodič dostává upozornění a může poslouchat.",
+  "lang": "cs",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0e0f13",
+  "theme_color": "#0e0f13",
+  "icons": [
+    { "src": "/ikony/ikona-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/ikony/ikona-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/ikony/ikona-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

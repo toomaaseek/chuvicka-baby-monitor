@@ -1,0 +1,10 @@
+node_modules
+data
+test
+chuvicka.env
+.env
+.git
+*.md
+LICENSE
+docker-compose*.yml
+docs

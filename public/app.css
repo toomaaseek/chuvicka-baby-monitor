@@ -1,0 +1,226 @@
+/* Chůvička — noční aplikace: tmavá, teplé tóny, nic nesvítí do očí. */
+:root {
+  color-scheme: dark;
+  --pozadi: #0e0f13;
+  --plocha: #171922;
+  --plocha-2: #1f2230;
+  --okraj: #2a2e3d;
+  --text: #ece6da;
+  --slabe: #8d90a0;
+  --akcent: #f2b56b;
+  --akcent-text: #1b1306;
+  --ozyva: #f2c14e;
+  --place: #ff6b5e;
+  --ok: #6fcf97;
+  --zakazano: #34374a;
+  --radius: 14px;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--pozadi);
+  color: var(--text);
+  font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+}
+main {
+  max-width: 34rem;
+  margin: 0 auto;
+  padding: 16px;
+  display: grid;
+  gap: 16px;
+}
+h1 { font-size: 1.5rem; margin: 0; letter-spacing: -0.01em; }
+h2 { font-size: 1.05rem; margin: 0; }
+p { margin: 0; }
+.slabe { color: var(--slabe); font-size: 0.9rem; }
+.chyba { color: var(--place); }
+.mala { font-size: 0.8rem; }
+
+.karta {
+  background: var(--plocha);
+  border: 1px solid var(--okraj);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+.radek { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mezi { justify-content: space-between; }
+
+button, .tlacitko {
+  font: inherit;
+  font-weight: 600;
+  border: 1px solid var(--okraj);
+  background: var(--plocha-2);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 12px 16px;
+  cursor: pointer;
+  text-decoration: none;
+  text-align: center;
+  touch-action: manipulation;
+}
+button:focus-visible { outline: 2px solid var(--akcent); outline-offset: 2px; }
+button:disabled { opacity: 0.5; cursor: default; }
+button.hlavni { background: var(--akcent); color: var(--akcent-text); border-color: var(--akcent); }
+button.velke { font-size: 1.15rem; padding: 18px; }
+/* Mluvit se drží prstem: žádné posouvání, výběr textu ani nabídka po dlouhém stisku. */
+button.mluvit { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+button.aktivni { background: var(--akcent); color: var(--akcent-text); border-color: var(--akcent); }
+button.odkaz { background: none; border: none; color: var(--slabe); padding: 6px; font-weight: 400; }
+.mrizka-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.mrizka-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.vlastni-pauza { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
+
+/* Ukazatel hladiny s prahy. */
+.hladina {
+  position: relative;
+  height: 22px;
+  border-radius: 11px;
+  background: var(--plocha-2);
+  overflow: hidden;
+}
+/* Barevná škála leží pevně přes celou šířku a hluk z ní odkryje sloupec —
+   barva tak odpovídá hlasitosti, ne délce sloupce. */
+.hladina > .naplni {
+  position: absolute; inset: 0;
+  background: linear-gradient(90deg, #4a6fa5, var(--ozyva) 70%, var(--place));
+  clip-path: inset(0 100% 0 0);
+  transition: clip-path 0.15s linear;
+}
+.hladina > .prah { position: absolute; top: 0; bottom: 0; width: 2px; }
+.prah.ozyva { background: var(--ozyva); }
+.prah.place { background: var(--place); }
+
+.stitek {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 0.85rem; font-weight: 600;
+  padding: 4px 10px; border-radius: 999px;
+  background: var(--plocha-2); border: 1px solid var(--okraj);
+}
+.stitek::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--slabe); }
+.stitek.ok::before { background: var(--ok); }
+.stitek.pozor::before { background: var(--ozyva); }
+.stitek.spatne::before { background: var(--place); }
+
+label.pole { display: grid; gap: 4px; font-size: 0.9rem; }
+label.pole .hodnota { font-variant-numeric: tabular-nums; color: var(--akcent); font-weight: 600; }
+/* Posuvník: barevně pásmo, kam smí, šedě to, co zabírá druhá úroveň.
+   Meze pásma (--mez-od/--mez-do) nastavuje skript. */
+input[type="range"] {
+  --palec: 24px;
+  --povoleno: var(--akcent);
+  --mez-od: 0%;
+  --mez-do: 100%;
+  --stopa: linear-gradient(90deg, var(--zakazano) 0 var(--mez-od), var(--povoleno) var(--mez-od) var(--mez-do), var(--zakazano) var(--mez-do));
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 32px; margin: 0; background: transparent;
+}
+input[type="range"]::-webkit-slider-runnable-track { height: 8px; border-radius: 4px; background: var(--stopa); }
+input[type="range"]::-moz-range-track { height: 8px; border-radius: 4px; background: var(--stopa); }
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: var(--palec); height: var(--palec); margin-top: calc((8px - var(--palec)) / 2);
+  border-radius: 50%; border: 3px solid var(--plocha); background: var(--text);
+}
+input[type="range"]::-moz-range-thumb {
+  width: var(--palec); height: var(--palec); box-sizing: border-box;
+  border-radius: 50%; border: 3px solid var(--plocha); background: var(--text);
+}
+input[type="range"]:focus-visible { outline: none; }
+input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--akcent); }
+input[type="range"]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 2px var(--akcent); }
+input[type="text"], input[type="number"], input[type="time"] {
+  font: inherit; color: var(--text); background: var(--plocha-2);
+  border: 1px solid var(--okraj); border-radius: 10px; padding: 10px 12px; width: 100%;
+}
+select { font: inherit; color: var(--text); background: var(--plocha-2); border: 1px solid var(--okraj); border-radius: 10px; padding: 10px; }
+
+.qr { background: #fff; border-radius: 12px; padding: 12px; width: min(100%, 260px); justify-self: center; }
+.qr svg { display: block; width: 100%; height: auto; }
+.kod { font: 600 1.6rem/1 ui-monospace, monospace; letter-spacing: 0.2em; text-align: center; }
+
+.udalosti { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.udalosti li { display: flex; gap: 10px; font-size: 0.9rem; }
+.udalosti time { color: var(--slabe); font-variant-numeric: tabular-nums; min-width: 3.2rem; }
+.u-place { color: var(--place); }
+.u-ozyva { color: var(--ozyva); }
+.u-citlivost { color: var(--slabe); }
+.u-offline, .u-neslysi { color: var(--place); }
+.u-zahajeno, .u-ukonceno, .u-ukonceno_rodicem { color: var(--slabe); }
+.ukoncit-hlidani { display: grid; gap: 10px; border-top: 1px solid var(--okraj); padding-top: 14px; margin-top: 4px; }
+button.nebezpecne { background: var(--place); border-color: var(--place); color: #1a0705; }
+.souhrn { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 0.9rem; }
+
+canvas.graf { width: 100%; height: 180px; display: block; touch-action: pan-y; cursor: grab; }
+canvas.graf:active { cursor: grabbing; }
+/* Rychlá volba úseku grafu: 1 h / 3 h / 12 h / 24 h. */
+.rozsah-grafu { display: flex; gap: 4px; }
+.rozsah-grafu button { padding: 4px 8px; font-size: 0.8rem; min-height: 0; }
+.rozsah-grafu button[aria-pressed="true"] { background: var(--akcent); color: var(--akcent-text); border-color: var(--akcent); }
+
+/* Hlídání: černá obrazovka. Nic nesvítí, dotyky se ignorují. */
+.hlidani {
+  position: fixed; inset: 0;
+  background: #000;
+  display: grid; place-items: center;
+  touch-action: none; user-select: none; -webkit-user-select: none;
+  z-index: 10;
+}
+.hlidani .tecka {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: #5a1f1a;
+}
+.hlidani .napoveda {
+  position: absolute; bottom: calc(24px + env(safe-area-inset-bottom));
+  color: #3a3a3a; font-size: 0.8rem; text-align: center; padding: 0 24px;
+}
+.hlidani .kruh {
+  position: absolute; width: 120px; height: 120px; border-radius: 50%;
+  border: 3px solid #4a3a2a; opacity: 0; transition: opacity 0.2s;
+}
+.hlidani .kruh.drzi { opacity: 1; animation: drzi 3s linear forwards; }
+@keyframes drzi { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+
+.okno {
+  position: fixed; inset: 0; z-index: 20;
+  background: rgb(0 0 0 / 0.6);
+  display: grid; align-items: end;
+}
+.okno > .karta {
+  border-radius: var(--radius) var(--radius) 0 0;
+  max-height: 85vh; overflow: auto;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  max-width: 34rem; width: 100%; justify-self: center;
+}
+video.skener { width: 100%; border-radius: 12px; background: #000; aspect-ratio: 1; object-fit: cover; }
+
+.verze { text-align: center; padding: 0 16px 16px; }
+.verze button.odkaz { color: var(--akcent); text-decoration: underline; }
+.verze-cislo { margin-left: 8px; font-size: 0.75rem; font-weight: 500; color: var(--slabe); letter-spacing: 0; vertical-align: middle; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+/* Budíček: dny v týdnu jako přepínací tlačítka, zaškrtávací přepínače. */
+.dny { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.dny label {
+  position: relative; display: grid; place-items: center; padding: 10px 0;
+  border: 1px solid var(--okraj); border-radius: 10px; background: var(--plocha-2);
+  font-weight: 600; cursor: pointer; user-select: none;
+}
+.dny input { position: absolute; opacity: 0; pointer-events: none; }
+.dny label:has(input:checked) { background: var(--akcent); color: var(--akcent-text); border-color: var(--akcent); }
+.dny label:has(input:disabled) { opacity: 0.4; cursor: default; }
+.dny label:has(input:focus-visible) { outline: 2px solid var(--akcent); outline-offset: 2px; }
+.prepinac { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.prepinac input { width: 1.3rem; height: 1.3rem; accent-color: var(--akcent); flex: none; }
+.zvuky-seznam { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.zvuky-seznam li { display: flex; align-items: center; gap: 8px; }
+.zvuky-seznam .nazev { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.zvuky-seznam button { padding: 8px 12px; }

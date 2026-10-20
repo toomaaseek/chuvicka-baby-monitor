@@ -1,0 +1,19 @@
+services:
+  chuvicka:
+    build: .
+    container_name: chuvicka
+    env_file: .env
+    environment:
+      # Local time of the server (logs). Alarms ring by the baby phone's clock.
+      - TZ=Europe/Prague
+    volumes:
+      # Named volume: it takes over the ownership of /data from the image
+      # (the app runs as user node, a bind-mounted folder would be root's).
+      - chuvicka-data:/data
+    ports:
+      # Only the reverse proxy on this machine reaches the app.
+      - "127.0.0.1:8080:8080"
+    restart: unless-stopped
+
+volumes:
+  chuvicka-data:
