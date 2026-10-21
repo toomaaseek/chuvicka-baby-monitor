@@ -6,8 +6,10 @@
 
 Dětská chůvička ze dvou telefonů a vlastního malého serveru. Jeden telefon
 leží v pokoji u dítěte a poslouchá, druhý má rodič. Ten dostane upozornění,
-když se dítě ozývá nebo pláče, a může poslouchat, mluvit na dítě, pustit
-ukolébavku nebo šum a ráno ho vzbudit budíčkem.
+když se dítě ozývá nebo pláče, a může poslouchat, mluvit na dítě, vyžádat
+si fotku, pustit ukolébavku nebo šum a ráno ho vzbudit budíčkem s východem
+slunce. Na přání chůvička rozpozná pláč, takže řeč dospělých, televize ani
+vysavač nebudí.
 
 Je to webová aplikace (PWA). Nic se neinstaluje z obchodu, nejsou žádné
 účty ani cizí cloud: telefony se spojují přes server, který si provozujete
@@ -18,15 +20,19 @@ v nastavení.
 
 <table>
   <tr>
-    <td align="center"><img src="docs/screenshots/cs-rodic.png" width="190" alt="Telefon rodiče"><br><sub>Telefon rodiče</sub></td>
-    <td align="center"><img src="docs/screenshots/cs-historie.png" width="190" alt="Historie noci"><br><sub>Historie noci</sub></td>
-    <td align="center"><img src="docs/screenshots/cs-chuvicka.png" width="190" alt="Chůvička u dítěte"><br><sub>Chůvička u dítěte</sub></td>
-    <td align="center"><img src="docs/screenshots/cs-parovani.png" width="190" alt="Párování QR kódem"><br><sub>Párování QR kódem</sub></td>
-    <td align="center"><img src="docs/screenshots/cs-budik.png" width="190" alt="Budíček"><br><sub>Budíček</sub></td>
+    <td align="center" valign="top"><img src="docs/screenshots/cs-rodic.png" width="190" alt="Telefon rodiče"><br><sub>Telefon rodiče</sub></td>
+    <td align="center" valign="top"><img src="docs/screenshots/cs-historie.png" width="190" alt="Historie noci se spánkovým souhrnem"><br><sub>Historie noci se spánkovým souhrnem</sub></td>
+    <td align="center" valign="top"><img src="docs/screenshots/cs-fotka.png" width="190" alt="Fotka na vyžádání"><br><sub>Fotka na vyžádání</sub></td>
+    <td align="center" valign="top"><img src="docs/screenshots/cs-nastaveni.png" width="190" alt="Nastavení: rozpoznání pláče"><br><sub>Nastavení: rozpoznání pláče</sub></td>
+  </tr>
+  <tr>
+    <td align="center" valign="top"><img src="docs/screenshots/cs-budik.png" width="190" alt="Budíček s východem slunce"><br><sub>Budíček s východem slunce</sub></td>
+    <td align="center" valign="top"><img src="docs/screenshots/cs-chuvicka.png" width="190" alt="Chůvička u dítěte"><br><sub>Chůvička u dítěte</sub></td>
+    <td align="center" valign="top"><img src="docs/screenshots/cs-parovani.png" width="190" alt="Párování QR kódem"><br><sub>Párování QR kódem</sub></td>
   </tr>
 </table>
 
-*Vymyšlená data, ne skutečná noc.*
+*Vymyšlená data a ilustrace, ne skutečná noc ani dítě.*
 
 ## Co umí
 

@@ -7,7 +7,9 @@
 A baby monitor made of two phones and your own small server. One phone
 stays in the baby's room and listens; the other one belongs to the parent.
 It gets a push notification when the baby stirs or cries and can listen in,
-talk to the baby, play a lullaby or white noise and ring a morning alarm.
+talk to the baby, ask for a photo, play a lullaby or white noise and ring a
+morning alarm with a sunrise. Optionally the baby unit recognises crying, so
+adults talking, TV or a vacuum cleaner don't wake you up.
 
 It is a web app (PWA). Nothing to install from a store, no accounts and no
 cloud service in between: the phones talk to a server you run yourself.
@@ -18,15 +20,19 @@ the settings.
 
 <table>
   <tr>
-    <td align="center"><img src="docs/screenshots/en-rodic.png" width="190" alt="Parent phone"><br><sub>Parent phone</sub></td>
-    <td align="center"><img src="docs/screenshots/en-historie.png" width="190" alt="Night history"><br><sub>Night history</sub></td>
-    <td align="center"><img src="docs/screenshots/en-chuvicka.png" width="190" alt="Baby unit"><br><sub>Baby unit</sub></td>
-    <td align="center"><img src="docs/screenshots/en-parovani.png" width="190" alt="Pairing with a QR code"><br><sub>Pairing with a QR code</sub></td>
-    <td align="center"><img src="docs/screenshots/en-budik.png" width="190" alt="Alarm"><br><sub>Alarm</sub></td>
+    <td align="center" valign="top"><img src="docs/screenshots/en-rodic.png" width="190" alt="Parent phone"><br><sub>Parent phone</sub></td>
+    <td align="center" valign="top"><img src="docs/screenshots/en-historie.png" width="190" alt="Night history with sleep summary"><br><sub>Night history with sleep summary</sub></td>
+    <td align="center" valign="top"><img src="docs/screenshots/en-fotka.png" width="190" alt="Photo on request"><br><sub>Photo on request</sub></td>
+    <td align="center" valign="top"><img src="docs/screenshots/en-nastaveni.png" width="190" alt="Settings: crying recognition"><br><sub>Settings: crying recognition</sub></td>
+  </tr>
+  <tr>
+    <td align="center" valign="top"><img src="docs/screenshots/en-budik.png" width="190" alt="Alarm with sunrise"><br><sub>Alarm with sunrise</sub></td>
+    <td align="center" valign="top"><img src="docs/screenshots/en-chuvicka.png" width="190" alt="Baby unit"><br><sub>Baby unit</sub></td>
+    <td align="center" valign="top"><img src="docs/screenshots/en-parovani.png" width="190" alt="Pairing with a QR code"><br><sub>Pairing with a QR code</sub></td>
   </tr>
 </table>
 
-*Example data, not a real night.*
+*Example data and an illustration, not a real night or child.*
 
 ## Features
 
