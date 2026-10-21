@@ -51,8 +51,15 @@ export function zpracujMikrofon(mic, vzorkovani, { naHladinu, naRamec }) {
   const vstupNaRamec = Math.round((RAMEC * vzorkovani) / VZORKOVANI)
   let zasobnik = new Float32Array(0)
   let vysilat = false
+  const klipy = new Map()
+  let dalsiKlip = 0
   mic.snimac.port.onmessage = (e) => {
     if (e.data && e.data.rms !== undefined) return naHladinu(hladinaZRms(e.data.rms))
+    if (e.data && e.data.klip !== undefined) {
+      klipy.get(e.data.klip)?.(e.data)
+      klipy.delete(e.data.klip)
+      return
+    }
     if (!vysilat) return
     const vzorky = e.data
     const spojeno = new Float32Array(zasobnik.length + vzorky.length)
@@ -67,6 +74,15 @@ export function zpracujMikrofon(mic, vzorkovani, { naHladinu, naRamec }) {
     zasobnik = spojeno.slice(od)
   }
   return {
+    /** Posledních ~3 s ze snímače: { vzorky, vzorkovani }. */
+    klip() {
+      const id = ++dalsiKlip
+      return new Promise((resolve, reject) => {
+        klipy.set(id, resolve)
+        mic.snimac.port.postMessage({ klip: id })
+        setTimeout(() => klipy.delete(id) && reject(new Error("klip nepřišel")), 2000)
+      })
+    },
     get vysilat() {
       return vysilat
     },

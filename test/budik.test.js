@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { srovnejBudik, maZvonit, popisBudiku, VYCHOZI_BUDIK, idSouboru } from "../public/js/budik.js"
+import { srovnejBudik, maZvonit, popisBudiku, VYCHOZI_BUDIK, idSouboru, svitani, barvaSvitani } from "../public/js/budik.js"
 import { srovnejNastaveni } from "../public/js/detekce.js"
 
 // Místní čas (jako na telefonu); 13. 10. 2026 je úterý.
@@ -48,4 +48,25 @@ test("budíček je součástí nastavení chůvičky", () => {
   const n = srovnejNastaveni({ budik: { zapnuto: true, cas: "06:00", dny: [1] } })
   assert.equal(n.budik.zapnuto, true)
   assert.deepEqual(srovnejNastaveni({}).budik, VYCHOZI_BUDIK)
+})
+
+test("východ slunce: rozsvěcí se před budíčkem jen ve dny budíčku", () => {
+  const b = srovnejBudik({ zapnuto: true, cas: "6:30", dny: [1, 2, 3, 4, 5], svitani: 20 })
+  assert.equal(b.svitani, 20)
+  assert.equal(svitani(b, d(13, 6, 9, 59), null), null, "ještě ne")
+  assert.equal(svitani(b, d(13, 6, 10), null), 0)
+  assert.equal(svitani(b, d(13, 6, 20), null), 0.5)
+  assert.equal(svitani(b, d(13, 6, 30), null), null, "v čas budíčku už zvoní budíček")
+  assert.equal(svitani(b, d(17, 6, 20), null), null, "sobota")
+  assert.equal(svitani(b, d(13, 6, 20), "2026-10-13"), null, "dnes už zvonil")
+  assert.equal(svitani({ ...b, svitani: 0 }, d(13, 6, 20), null), null)
+  assert.equal(srovnejBudik({ svitani: 7 }).svitani, 0, "jen nabízené délky")
+})
+
+test("barva svítání: černá → teplá bílá", () => {
+  assert.equal(barvaSvitani(0), "rgb(0, 0, 0)")
+  assert.equal(barvaSvitani(1), "rgb(255, 236, 205)")
+  assert.equal(barvaSvitani(2), "rgb(255, 236, 205)")
+  const [r, g, b] = barvaSvitani(0.5).match(/\d+/g).map(Number)
+  assert.ok(r > g && g > b, "uprostřed oranžová")
 })

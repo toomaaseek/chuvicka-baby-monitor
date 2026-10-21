@@ -60,3 +60,41 @@ export function volbaJazyka() {
   )
   return el("label", { class: "pole", for: "jazyk" }, "Jazyk / Language", vyber)
 }
+
+/** Naposledy otevřená záložka každé sady — po novém otevření okna stejná. */
+const posledniZalozka = new Map()
+
+/**
+ * Záložky jako v docházce: lišta nahoře, pod ní jen vybraný obsah.
+ * `polozky`: [{ id, nazev, obsah: [prvky] }].
+ */
+export function zalozky(sada, polozky) {
+  let vybrana = polozky.some((p) => p.id === posledniZalozka.get(sada)) ? posledniZalozka.get(sada) : polozky[0].id
+  const tlacitka = polozky.map((p) =>
+    el("button", { type: "button", role: "tab", id: `zal-${sada}-${p.id}`, "aria-controls": `pan-${sada}-${p.id}`, onclick: () => ukaz(p.id) }, p.nazev),
+  )
+  const panely = polozky.map((p) =>
+    el("div", { role: "tabpanel", id: `pan-${sada}-${p.id}`, "aria-labelledby": `zal-${sada}-${p.id}`, class: "zalozka" }, ...p.obsah),
+  )
+  function ukaz(id) {
+    vybrana = id
+    posledniZalozka.set(sada, id)
+    polozky.forEach((p, i) => {
+      const ano = p.id === id
+      tlacitka[i].setAttribute("aria-selected", String(ano))
+      tlacitka[i].tabIndex = ano ? 0 : -1
+      panely[i].hidden = !ano
+    })
+  }
+  ukaz(vybrana)
+  // Šipky mezi záložkami (klávesnice, čtečka obrazovky).
+  const lista = el("div", { class: "zalozky", role: "tablist" }, ...tlacitka)
+  lista.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return
+    const i = polozky.findIndex((p) => p.id === vybrana)
+    const j = (i + (e.key === "ArrowRight" ? 1 : -1) + polozky.length) % polozky.length
+    ukaz(polozky[j].id)
+    tlacitka[j].focus()
+  })
+  return [lista, ...panely]
+}

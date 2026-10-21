@@ -3,9 +3,12 @@ import { Spojeni, api } from "./spojeni.js"
 import { kontext, mikrofon, zpracujMikrofon, prehravac } from "./zvuk.js"
 import { vytvorDetektor, prahyZKalibrace, VYCHOZI } from "./detekce.js"
 import { pustZvuk, prehravacSouboru, ZVUKY } from "./zvuky.js"
-import { maZvonit, idSouboru, DELKA_MINUT, NABEH_S } from "./budik.js"
+import { maZvonit, idSouboru, svitani, barvaSvitani, DELKA_MINUT, NABEH_S } from "./budik.js"
 import { panelNastaveni, ukazatel, textKalibrace } from "./nastaveni.js"
 import { t } from "./i18n.js"
+import { zesvetli, rozmery } from "./fotka.js"
+import { nactiRozpoznani, klasifikuj } from "./rozpoznani.js"
+import { posudKlip } from "./plac.js"
 
 /**
  * Telefon u dítěte. Poslouchá mikrofon, hlásí hladinu a události,
@@ -57,6 +60,7 @@ export function spustChuvicku(zarizeni, { naZruseni }) {
       if (m.typ === "nastaveni") {
         nastaveni = m.data
         pouzijNastaveni()
+        pripravRozpoznani()
         panel?.aktualizuj(nastaveni)
         // Zvuk budíčku stáhnout hned — ráno může vypadnout Wi-Fi.
         if (nastaveni.budik?.zapnuto && idSouboru(nastaveni.budik.zvuk)) stahniSoubor(idSouboru(nastaveni.budik.zvuk)).catch(() => {})
@@ -64,6 +68,8 @@ export function spustChuvicku(zarizeni, { naZruseni }) {
         const pred = rodicu
         rodicu = m.pocet
         vykresliStav()
+        // S rodičem se nastavení sbalí (nastavuje se u něj) — jen při změně.
+        if (pred > 0 !== rodicu > 0) vykresli()
         if (rodicu > pred) document.querySelector(".okno[data-parovani]")?.remove()
       } else if (m.typ === "zive") {
         zive = m.zapnout
@@ -84,6 +90,8 @@ export function spustChuvicku(zarizeni, { naZruseni }) {
         spustUkolebavku(m.zvuk, m.minut)
       } else if (m.typ === "budikVypnout") {
         budik?.zastav()
+      } else if (m.typ === "fotka") {
+        vyfot(m.kamera)
       } else if (m.typ === "kalibrovat") {
         kalibrovat()
       } else if (m.typ === "ukoncit") {
@@ -118,8 +126,12 @@ export function spustChuvicku(zarizeni, { naZruseni }) {
       nabiji: baterie?.charging ?? null,
       ukolebavka: ukolebavka ? { zvuk: ukolebavka.zvuk, do: ukolebavka.do } : null,
       budik: budik ? { od: budik.od } : null,
+      // Prahy, které při hlídání opravdu platí (zvednuté nad šum nebo
+      // nad hrající ukolébavku) — rodič je vidí na ukazateli.
+      prahy: hlida ? detektor.prahy : null,
     })
   }
+  let poslanePrahy = ""
 
   // Baterie (jen Android/Chrome; iPhone ji webu neprozradí).
   let baterie = null
@@ -232,7 +244,13 @@ export function spustChuvicku(zarizeni, { naZruseni }) {
     if (mereniHrani) mereniHrani.push(h)
     if (hlida && !hlas) {
       const u = detektor.krok(h, ted / 1000)
-      if (u) spojeni.posli({ typ: "udalost", ...u })
+      if (u) posliUdalost(u)
+      const p = detektor.prahy
+      const klic = `${p.prahOzyva}/${p.prahPlace}`
+      if (klic !== poslanePrahy) {
+        poslanePrahy = klic
+        posliStav()
+      }
     }
     const interval = zive || !hlida || ted - posledniHlasite < 15_000 ? 1000 : 10_000
     if (ted - posledniOdeslani >= interval) {
@@ -278,6 +296,121 @@ export function spustChuvicku(zarizeni, { naZruseni }) {
     const vysledek = { ticho: Math.round(ticho), prahOzyva: prahy.prahOzyva, prahPlace: prahy.prahPlace }
     if (tlacitko) tlacitko.textContent = textKalibrace(vysledek)
     ohlas("hotovo", vysledek)
+  }
+
+  /**
+   * Fotka na vyžádání rodiče: kamera se zapne jen na chvíli (expozice
+   * ~1,5 s), snímek se zmenší, ve tmě zesvětlí a pošle na server. Mikrofon
+   * běží dál — kdyby ho systém přesto vypnul, hlídač ho do pár sekund
+   * otevře znovu.
+   */
+  let fotim = false
+  async function vyfot(kamera) {
+    if (fotim) return
+    fotim = true
+    let stream = null
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: kamera === "predni" ? "user" : { ideal: "environment" }, width: { ideal: 1280 } },
+      })
+      const video = el("video", { muted: true, playsinline: true })
+      video.srcObject = stream
+      await video.play()
+      await new Promise((r) => setTimeout(r, 1500))
+      const { sirka, vyska } = rozmery(video.videoWidth, video.videoHeight)
+      const platno = el("canvas", { width: sirka, height: vyska })
+      const g = platno.getContext("2d")
+      g.drawImage(video, 0, 0, sirka, vyska)
+      const obraz = g.getImageData(0, 0, sirka, vyska)
+      if (zesvetli(obraz.data) > 1) g.putImageData(obraz, 0, 0)
+      const blob = await new Promise((r) => platno.toBlob(r, "image/jpeg", 0.75))
+      const r = await fetch("/api/fotka", {
+        method: "POST",
+        headers: { "Content-Type": "image/jpeg", "X-Zarizeni": `${zarizeni.id}:${zarizeni.tajemstvi}` },
+        body: blob,
+      })
+      if (!r.ok) throw new Error(`fotka ${r.status}`)
+    } catch (e) {
+      console.warn("fotka", e)
+      spojeni.posli({ typ: "fotka", chyba: e?.name === "NotAllowedError" ? "povoleni" : "kamera" })
+    } finally {
+      stream?.getTracks().forEach((s) => s.stop())
+      fotim = false
+    }
+  }
+
+  /**
+   * Rozpoznání pláče: model se načte na pozadí, když je volba zapnutá.
+   * Stav ukazuje příprava chůvičky; bez modelu se hlídá jen podle hlasitosti.
+   */
+  let klasifikator = null
+  let stavRozpoznani = "vypnuto" // nacita | pripraveno | nejde | vypnuto
+  function pripravRozpoznani() {
+    if (!nastaveni.rozpoznatPlac) {
+      stavRozpoznani = "vypnuto"
+      return vykresliRozpoznani()
+    }
+    if (klasifikator) {
+      stavRozpoznani = "pripraveno"
+      return vykresliRozpoznani()
+    }
+    stavRozpoznani = "nacita"
+    vykresliRozpoznani()
+    nactiRozpoznani()
+      .then((k) => {
+        klasifikator = k
+        stavRozpoznani = "pripraveno"
+      })
+      .catch((e) => {
+        console.warn("rozpoznání pláče nejde", e)
+        stavRozpoznani = "nejde"
+      })
+      .finally(vykresliRozpoznani)
+  }
+  const rozpoznaniPrvek = el("p", { class: "slabe mala", "data-rozpoznani": "" })
+  function vykresliRozpoznani() {
+    rozpoznaniPrvek.dataset.rozpoznani = stavRozpoznani
+    rozpoznaniPrvek.textContent = {
+      nacita: t("Rozpoznávání pláče se připravuje…"),
+      pripraveno: t("Rozpoznávání pláče je připravené."),
+      nejde: t("Rozpoznávání pláče tady nejde — hlídá se podle hlasitosti."),
+      vypnuto: t("Rozpoznávání pláče je vypnuté — hlídá se podle hlasitosti."),
+    }[stavRozpoznani]
+  }
+
+  /**
+   * Upozornění z detektoru: s rozpoznáním nejdřív posoudit poslední 3 s.
+   * Když to dítě není (řeč, televize, vysavač…), rodič nic nedostane,
+   * do historie se zapíše „neohlášeno". Chyba rozpoznání = upozornění odejde.
+   */
+  async function posliUdalost(u) {
+    if (nastaveni.rozpoznatPlac && klasifikator && zpracovani) {
+      try {
+        const { vzorky, vzorkovani } = await zpracovani.klip()
+        const posudek = posudKlip(klasifikuj(klasifikator, vzorky, vzorkovani))
+        if (posudek.potlacit) {
+          detektor.odloz(u.druh, 30)
+          spojeni.posli({ typ: "udalost", druh: "potlaceno", hladina: u.hladina, trvani: u.trvani, zvuk: posudek.nejvic?.nazev })
+          return
+        }
+      } catch (e) {
+        console.warn("rozpoznání pláče selhalo, upozornění odchází", e)
+      }
+    }
+    spojeni.posli({ typ: "udalost", ...u })
+  }
+
+  /** Povolení kamery předem — v noci u černé obrazovky se nikdo neptá. */
+  async function povolKameru(tlacitko) {
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+      s.getTracks().forEach((x) => x.stop())
+      tlacitko.textContent = t("Kamera pro fotku povolená ✓")
+      tlacitko.disabled = true
+    } catch {
+      tlacitko.textContent = t("Kamera není povolená — povol ji v nastavení prohlížeče")
+    }
   }
 
   /** Nahraný zvuk ze serveru do paměti telefonu (jednou, pak z paměti). */
@@ -370,6 +503,7 @@ export function spustChuvicku(zarizeni, { naZruseni }) {
    * rodič na dálku, nebo někdo u dítěte po odemknutí obrazovky.
    */
   setInterval(() => {
+    aktualizujSvitani()
     if (!hlida || !ctx || budik) return
     let posledni = null
     try {
@@ -382,6 +516,24 @@ export function spustChuvicku(zarizeni, { naZruseni }) {
     } catch {}
     zazvon()
   }, 10_000)
+
+  /**
+   * Východ slunce: černá obrazovka hlídání se před budíčkem postupně
+   * rozsvítí do teplé barvy (krok 10 s, přechod plynulý). Během zvonění
+   * svítí naplno, po vypnutí budíčku zase černá. Jas telefonu stránka
+   * měnit nesmí — rozsvítí se jen barva.
+   */
+  function aktualizujSvitani() {
+    const vrstva = document.querySelector("[data-hlidani]")
+    if (!vrstva) return
+    let posledni = null
+    try {
+      posledni = localStorage.getItem(KLIC_BUDIKU)
+    } catch {}
+    const p = budik ? (nastaveni.budik?.svitani ? 1 : null) : svitani(nastaveni.budik, new Date(), posledni)
+    vrstva.style.background = p === null ? "" : barvaSvitani(p)
+    vrstva.dataset.svitani = p === null ? "" : String(Math.round(p * 100))
+  }
 
   async function zazvon() {
     if (ukolebavka) {
@@ -398,16 +550,18 @@ export function spustChuvicku(zarizeni, { naZruseni }) {
       // Jednorázový budíček se po zazvonění vypne.
       if (nastaveny.jednou) spojeni.posli({ typ: "nastaveni", data: { budik: { ...nastaveni.budik, zapnuto: false } } })
       napovedaHlidani?.(null)
+      aktualizujSvitani()
       posliStav()
     }
     const zastav = pustZvuk(ctx, druh, {
       minut: DELKA_MINUT,
       nabeh: NABEH_S,
-      hlasitost: nastaveni.hlasitost,
+      hlasitost: nastaveni.hlasitostBudiku ?? nastaveni.hlasitost,
       soubor,
       naKonec: konec,
     })
     budik = { od: Date.now(), zastav }
+    aktualizujSvitani()
     hlidejHrani(() => budik?.zastav === zastav)
     napovedaHlidani?.(t("Zvoní budíček. Vypnout: podrž prst 3 sekundy."))
     posliStav()
@@ -601,6 +755,7 @@ export function spustChuvicku(zarizeni, { naZruseni }) {
         { class: "karta" },
         el("h2", { text: t("Telefony rodičů") }),
         el("button", { onclick: parovani }, t("Spárovat telefon rodiče (QR)")),
+        el("button", { "data-povolit-kameru": "", onclick: (e) => povolKameru(e.currentTarget) }, t("Povolit kameru pro fotku na vyžádání")),
       ),
       el(
         "section",
@@ -611,9 +766,17 @@ export function spustChuvicku(zarizeni, { naZruseni }) {
           text: t("Ukazatel ukazuje hluk v místnosti. Žlutá čára: ozývá se, červená: pláče. Kalibrace změří ticho a prahy nastaví nad něj."),
         }),
         meric.prvek,
+        rozpoznaniPrvek,
         mic ? null : el("button", { "data-zapnout-mikrofon": "", onclick: () => zapniMikrofon() }, t("Zapnout mikrofon")),
-        kalibraceTl,
-        panel.prvek,
+        // Se spárovaným rodičem se nastavuje u něj — tady jen sbalené.
+        rodicu > 0
+          ? el(
+              "details",
+              { class: "sbalene", "data-nastaveni-tady": "" },
+              el("summary", { text: t("Nastavení tady (jinak na telefonu rodiče)") }),
+              el("div", { class: "zalozka" }, kalibraceTl, panel.prvek),
+            )
+          : [kalibraceTl, panel.prvek],
       ),
       el(
         "section",

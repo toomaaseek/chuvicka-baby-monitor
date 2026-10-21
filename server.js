@@ -1,7 +1,7 @@
 import http from "node:http"
 import { readFile, writeFile, unlink } from "node:fs/promises"
 import { readFileSync, mkdirSync, createReadStream } from "node:fs"
-import { createHash, randomBytes } from "node:crypto"
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto"
 import { dirname, extname, join, normalize } from "node:path"
 import { fileURLToPath } from "node:url"
 import { WebSocketServer } from "ws"
@@ -11,6 +11,7 @@ import { otevriDb } from "./lib/db.js"
 import { srovnejNastaveni } from "./public/js/detekce.js"
 import { idSouboru } from "./public/js/budik.js"
 import { prelozit, platnyJazyk, JAZYKY } from "./public/js/i18n.js"
+import { PLATNOST_MS as PLATNOST_FOTKY } from "./public/js/fotka.js"
 
 /**
  * Chůvička — server.
@@ -44,6 +45,15 @@ const MAX_ZVUKY_CELKEM = (Number(process.env.CHUVICKA_MAX_ZVUKY_MB) || 200) * 10
  * hlavičce od klienta bez proxy věřit nejde (obešel by limit pokusů).
  */
 const IP_HLAVICKA = (process.env.CHUVICKA_IP_HLAVICKA ?? "").trim().toLowerCase()
+/**
+ * Heslo pro přidání nového telefonu. Bez něj si telefon zaregistruje
+ * každý, kdo zná adresu serveru (k chůvičce se tím ale nedostane —
+ * párování chce jednorázový kód). Telefon rodiče s platným kódem z QR
+ * heslo nepotřebuje: kód sám dokazuje, že ho pustila chůvička.
+ */
+const HESLO = process.env.CHUVICKA_HESLO ?? ""
+const otisk = (s) => createHash("sha256").update(String(s)).digest()
+const spravneHeslo = (s) => typeof s === "string" && timingSafeEqual(otisk(s), otisk(HESLO))
 
 const VAPID = {
   verejny: process.env.VAPID_PUBLIC_KEY ?? "",
@@ -95,6 +105,14 @@ const chuvicky = new Map()
 const rodice = new Map()
 /** Kdy chůvička naposledy dala vědět a co se už nahlásilo — pro hlídání spojení. */
 const hlidani = new Map()
+/**
+ * Poslední fotka každé chůvičky: id → { data, kdy }. Jen v paměti a jen
+ * pár minut — fotky z pokoje dítěte se nikam neukládají.
+ */
+const fotky = new Map()
+setInterval(() => {
+  for (const [id, f] of fotky) if (Date.now() - f.kdy > PLATNOST_FOTKY) fotky.delete(id)
+}, 60_000).unref()
 
 function posli(ws, zprava) {
   if (ws.readyState === ws.OPEN) ws.send(typeof zprava === "string" || Buffer.isBuffer(zprava) ? zprava : JSON.stringify(zprava))
@@ -113,6 +131,7 @@ function zrusChuvicku(chuvickaId) {
   for (const r of db.rodice(chuvickaId)) for (const ws of rodice.get(r.id) ?? []) posli(ws, { typ: "odparovano", chuvicka: chuvickaId })
   db.smazZarizeni(chuvickaId)
   hlidani.delete(chuvickaId)
+  fotky.delete(chuvickaId)
   chuvicky.get(chuvickaId)?.ws.close(4001, "zrušeno")
 }
 
@@ -144,6 +163,8 @@ function stavChuvicky(chuvickaId) {
     ukolebavka: c?.stav.ukolebavka ?? null,
     /** Budíček právě zvoní: { od }. Nastavení budíčku je v `nastaveni.budik`. */
     budik: c?.stav.budik ?? null,
+    /** Prahy, které teď platí; null = jak v nastavení. */
+    prahy: c?.stav.hlida ? (c.stav.prahy ?? null) : null,
     naposledy: hlidani.get(chuvickaId)?.naposledy ?? z?.naposledy ?? null,
     nastaveni: n,
   }
@@ -216,6 +237,11 @@ function zpravaChuvicky(z, c, data) {
       uroven: m.druh,
       tag: `chuvicka-${z.id}`,
     }))
+  } else if (m.typ === "udalost" && m.druh === "potlaceno") {
+    // Rozpoznání pláče: hlasité, ale ne dítě — do historie, bez upozornění.
+    db.zapisUdalost(z.id, "potlaceno", Number(m.hladina) || null, Number(m.trvani) || null)
+    console.log(`neohlášeno ${z.id.slice(0, 6)}: ${String(m.zvuk ?? "").replace(/[^\p{L} ,]/gu, "").slice(0, 40)}`)
+    rodicumChuvicky(z.id, { typ: "udalost", druh: "potlaceno", hladina: m.hladina, trvani: m.trvani, kdy: Date.now() })
   } else if (m.typ === "nastaveni" && m.data && typeof m.data === "object") {
     // Nastavení jde měnit i přímo na chůvičce (kalibrace, posuvníky).
     const n = db.ulozNastaveni(z.id, platnyZvuk(srovnejNastaveni({ ...db.nastaveni(z.id), ...m.data })))
@@ -235,6 +261,9 @@ function zpravaChuvicky(z, c, data) {
       prahPlace: cislo(m.prahPlace),
       text: m.text === undefined ? undefined : String(m.text).slice(0, 200),
     })
+  } else if (m.typ === "fotka" && ["kamera", "povoleni"].includes(m.chyba)) {
+    // Fotka nevyšla — rodič se dozví proč.
+    rodicumChuvicky(z.id, { typ: "fotka", chyba: m.chyba })
   } else if (m.typ === "prejmenovat" && typeof m.nazev === "string") {
     db.prejmenuj(z.id, m.nazev.trim().slice(0, 40) || "Chůvička")
     z.nazev = db.zarizeni(z.id).nazev
@@ -275,6 +304,11 @@ function zpravaChuvicky(z, c, data) {
       nabiji: typeof m.nabiji === "boolean" ? m.nabiji : pred.nabiji,
       ukolebavka: m.ukolebavka ?? null,
       budik: m.budik ?? null,
+      // Prahy, které chůvička opravdu používá (zvednuté nad stálý šum).
+      prahy:
+        m.prahy && Number.isFinite(m.prahy.prahOzyva) && Number.isFinite(m.prahy.prahPlace)
+          ? { prahOzyva: Math.round(m.prahy.prahOzyva), prahPlace: Math.round(m.prahy.prahPlace) }
+          : null,
     }
     if (c.stav.budik && !pred.budik) {
       db.zapisUdalost(z.id, "budik")
@@ -365,6 +399,11 @@ function zpravaRodice(z, ws, data, binarni) {
     const zvuk = vestaveny || soubor ? m.zvuk : null
     const minut = Math.max(1, Math.min(120, Number(m.minut) || 20))
     posli(c.ws, { typ: "ukolebavka", zvuk, minut })
+  } else if (m.typ === "fotka") {
+    // Fotka na vyžádání; nejvýš jednou za 5 s, ať se kamera nezapíná dokola.
+    if (!c || Date.now() - (c.fotkaZadana ?? 0) < 5000) return
+    c.fotkaZadana = Date.now()
+    posli(c.ws, { typ: "fotka", kamera: m.kamera === "predni" ? "predni" : "zadni" })
   } else if (m.typ === "budikVypnout") {
     if (c) posli(c.ws, { typ: "budikVypnout" })
   } else if (m.typ === "kalibrovat") {
@@ -608,7 +647,23 @@ const TYPY = {
   ".png": "image/png",
   ".svg": "image/svg+xml",
   ".json": "application/json",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".wasm": "application/wasm",
+  ".tflite": "application/octet-stream",
 }
+
+/**
+ * Rozpoznání pláče: knihovna MediaPipe z npm balíčku (ne z gitu — ~20 MB)
+ * pod /vendor/mediapipe/. Jen vyjmenované soubory.
+ */
+const MEDIAPIPE = join(KOREN, "node_modules", "@mediapipe", "tasks-audio")
+const MEDIAPIPE_SOUBORY = new Set([
+  "audio_bundle.mjs",
+  "wasm/audio_wasm_internal.js",
+  "wasm/audio_wasm_internal.wasm",
+  "wasm/audio_wasm_nosimd_internal.js",
+  "wasm/audio_wasm_nosimd_internal.wasm",
+])
 
 function json(res, kod, data) {
   res.writeHead(kod, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" })
@@ -658,13 +713,19 @@ async function api(req, res, cesta) {
   const jazyk = jazykPozadavku(req)
   const t = (s, p) => prelozit(jazyk, s, p)
   if (cesta === "/api/vapid" && req.method === "GET") return json(res, 200, { klic: VAPID.verejny })
-  if (cesta === "/api/zdravi") return json(res, 200, { ok: true, verze: VERZE })
+  if (cesta === "/api/zdravi") return json(res, 200, { ok: true, verze: VERZE, heslo: Boolean(HESLO) })
 
   if (cesta === "/api/registrace" && req.method === "POST") {
     const b = await telo(req)
     const role = b.role === "chuvicka" ? "chuvicka" : b.role === "rodic" ? "rodic" : null
     if (!role) return json(res, 400, { chyba: t("Neznámá role.") })
     if (prilisPokusu(ip)) return json(res, 429, { chyba: t("Moc pokusů, zkus to za chvíli.") })
+    if (HESLO && !spravneHeslo(b.heslo) && !(role === "rodic" && typeof b.kod === "string" && db.platnyKod(b.kod))) {
+      return json(res, 403, {
+        chyba: b.heslo ? t("Heslo nesouhlasí.") : t("Na tomhle serveru je k přidání telefonu potřeba heslo."),
+        heslo: true,
+      })
+    }
     const jazykZarizeni = platnyJazyk(b.jazyk ?? jazyk)
     const vychozi = role === "chuvicka" ? prelozit(jazykZarizeni, "Chůvička") : prelozit(jazykZarizeni, "Rodič")
     const nazev = String(b.nazev ?? "").trim().slice(0, 40) || vychozi
@@ -683,6 +744,34 @@ async function api(req, res, cesta) {
   if (zvukCesta && !zvukCesta[2] && req.method === "GET") return posliZvuk(res, zvukCesta[1], t)
   if (zvukCesta && zvukCesta[2] && req.method === "POST" && smiZvuky) return smazZvuk(res, zvukCesta[1], t)
 
+  if (cesta === "/api/fotka" && req.method === "POST" && z.role === "chuvicka") {
+    const kusy = []
+    let velikost = 0
+    for await (const kus of req) {
+      velikost += kus.length
+      if (velikost > 2 * 1048576) return json(res, 413, { chyba: t("Soubor je větší než {mb} MB.", { mb: 2 }) })
+      kusy.push(kus)
+    }
+    const data = Buffer.concat(kusy)
+    if (data.length < 4 || data[0] !== 0xff || data[1] !== 0xd8 || data[2] !== 0xff) return json(res, 415, { chyba: "JPEG" })
+    const kdy = Date.now()
+    fotky.set(z.id, { data, kdy })
+    rodicumChuvicky(z.id, { typ: "fotka", kdy })
+    return json(res, 200, { ok: true })
+  }
+  if (cesta.startsWith("/api/fotka") && req.method === "GET" && z.role === "rodic") {
+    const chuvickaId = new URL(req.url, "http://x").searchParams.get("chuvicka") ?? ""
+    const f = db.jePar(chuvickaId, z.id) ? fotky.get(chuvickaId) : null
+    if (!f || Date.now() - f.kdy > PLATNOST_FOTKY) return json(res, 404, { chyba: t("Nenalezeno.") })
+    res.writeHead(200, {
+      "Content-Type": "image/jpeg",
+      "Content-Length": f.data.length,
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+      "X-Porizeno": String(f.kdy),
+    })
+    return res.end(f.data)
+  }
   if (cesta === "/api/ja" && req.method === "GET") {
     return json(res, 200, {
       id: z.id,
@@ -774,8 +863,10 @@ async function soubor(req, res, cesta) {
   }
   let rel = normalize(decodeURIComponent(cesta)).replace(/^(\.\.[/\\])+/, "")
   if (rel === "/" || !extname(rel)) rel = "/index.html"
+  const mp = rel.startsWith("/vendor/mediapipe/") ? rel.slice("/vendor/mediapipe/".length) : null
+  if (mp !== null && !MEDIAPIPE_SOUBORY.has(mp)) rel = "/neni"
   try {
-    const data = await readFile(join(VEREJNE, rel))
+    const data = await readFile(mp !== null && MEDIAPIPE_SOUBORY.has(mp) ? join(MEDIAPIPE, mp) : join(VEREJNE, rel))
     const etag = `"${createHash("sha1").update(data).digest("base64url").slice(0, 16)}"`
     // Vše se pokaždé ověří (ETag → 304). S max-age prohlížeč po vydání
     // míchal starý skript s novou stránkou a telefon zůstal na staré verzi.
@@ -792,7 +883,7 @@ async function soubor(req, res, cesta) {
       "Permissions-Policy": "microphone=(self), camera=(self)",
       // Jen vlastní skripty a spojení; zvuky a QR z blob:/data:.
       "Content-Security-Policy":
-        `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'${wsZdroj(req)}; worker-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'`,
+        `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'${wsZdroj(req)}; worker-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'`,
     }
     res.writeHead(200, hlavicky)
     res.end(data)

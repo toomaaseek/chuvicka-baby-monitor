@@ -138,11 +138,31 @@ try {
   const verze = await rodic.locator("h1 .verze-cislo").textContent()
   ok(/^v\d+\.\d+\.\d+$/.test(verze), `rodič se spárovanou chůvičkou vidí verzi ${verze}`)
 
-  // Kalibrace ticha.
+  // Se spárovaným rodičem je nastavení na chůvičce sbalené.
+  ok(
+    (await dite.locator("[data-nastaveni-tady]").count()) === 1 && !(await dite.locator("#nast-prahOzyva").isVisible()),
+    "nastavení na chůvičce je sbalené, nastavuje se u rodiče",
+  )
+
+  // Rozpoznání pláče je ve výchozím stavu vypnuté; rodič ho zapne
+  // a model YAMNet se v chůvičce načte (WASM pod CSP).
+  await dite.locator('[data-rozpoznani="vypnuto"]').waitFor()
+  await rodic.getByRole("button", { name: "Nastavení" }).click()
+  await rodic.getByLabel("Rozpoznávat pláč").check()
+  await rodic.getByRole("button", { name: "Hotovo" }).click()
+  await dite.locator('[data-rozpoznani="pripraveno"], [data-rozpoznani="nejde"]').waitFor({ timeout: 60000 })
+  ok((await dite.locator("[data-rozpoznani]").getAttribute("data-rozpoznani")) === "pripraveno", "rozpoznávání pláče zapnuté z telefonu rodiče je na chůvičce připravené")
+
+  // Kalibrace ticha (na chůvičce v rozbaleném nastavení).
+  await dite.locator("[data-nastaveni-tady] summary").click()
   await dite.getByRole("button", { name: "Kalibrovat ticho (10 s)" }).click()
   await dite.getByRole("button", { name: /Ticho \d+ → prahy/ }).waitFor({ timeout: 20000 })
   ok(true, `kalibrace: ${await dite.getByRole("button", { name: /Ticho/ }).textContent()}`)
   if (SNIMKY) await dite.screenshot({ path: `${SNIMKY}/ch-priprava.png`, fullPage: true })
+
+  await dite.getByRole("button", { name: "Povolit kameru pro fotku na vyžádání" }).click()
+  await dite.getByRole("button", { name: "Kamera pro fotku povolená ✓" }).waitFor()
+  ok(true, "chůvička má kameru pro fotku povolenou předem")
 
   await dite.getByRole("button", { name: "Začít hlídat" }).click()
   await dite.locator("[data-hlidani]").waitFor()
@@ -192,6 +212,38 @@ try {
   await rodic.getByRole("button", { name: "Hotovo" }).click()
   await dite.waitForFunction(() => document.querySelector("#nast-prahOzyva")?.value === "30", null, { timeout: 10000 })
   ok(true, "nastavení z telefonu rodiče došlo chůvičce")
+  // Přizpůsobení stálému šumu jde vypnout na dálku (a zase zapnout).
+  await rodic.getByRole("button", { name: "Nastavení" }).click()
+  await rodic.getByLabel("Přizpůsobit prahy stálému šumu").uncheck()
+  await dite.waitForFunction(() => document.querySelector("#nast-prizpusobitSumu")?.checked === false, null, { timeout: 10000 })
+  await rodic.getByLabel("Přizpůsobit prahy stálému šumu").check()
+  await dite.waitForFunction(() => document.querySelector("#nast-prizpusobitSumu")?.checked === true, null, { timeout: 10000 })
+  await rodic.getByRole("button", { name: "Hotovo" }).click()
+  ok(true, "přizpůsobení šumu se přepíná z telefonu rodiče")
+
+  // Posuvník: dotyk na dráze mimo jezdec hodnotu nezmění (jen posouvá okno),
+  // tažení za jezdec ano.
+  await rodic.getByRole("button", { name: "Nastavení" }).click()
+  const posuvnik = rodic.locator("#nast-pauza")
+  const predPosunem = await posuvnik.inputValue()
+  const dr = await posuvnik.boundingBox()
+  const palec = await posuvnik.evaluate((e) => (Number(e.value) - Number(e.min)) / (Number(e.max) - Number(e.min)))
+  const xPalce = dr.x + 12 + palec * (dr.width - 24)
+  const mimo = xPalce > dr.x + dr.width / 2 ? dr.x + 20 : dr.x + dr.width - 20
+  await rodic.mouse.click(mimo, dr.y + dr.height / 2)
+  ok((await posuvnik.inputValue()) === predPosunem, "klepnutí na dráhu posuvníku hodnotu nezmění")
+  await rodic.mouse.move(xPalce, dr.y + dr.height / 2)
+  await rodic.mouse.down()
+  await rodic.mouse.move(mimo, dr.y + dr.height / 2, { steps: 8 })
+  await rodic.mouse.up()
+  ok((await posuvnik.inputValue()) !== predPosunem, "tažení za jezdec hodnotu změní")
+  await posuvnik.evaluate((e, v) => {
+    e.value = v
+    e.dispatchEvent(new Event("input", { bubbles: true }))
+    e.dispatchEvent(new Event("change", { bubbles: true }))
+  }, predPosunem)
+  await rodic.waitForTimeout(500)
+  await rodic.getByRole("button", { name: "Hotovo" }).click()
   await rodic.locator(".udalosti li.u-ozyva, .udalosti li.u-place").first().waitFor({ timeout: 20000 })
   ok(true, `rodiči došla událost: ${await rodic.locator(".udalosti li").first().textContent()}`)
 
@@ -257,6 +309,11 @@ try {
 
   // Vlastní zvuk: rodič ho nahraje v nastavení, pustí jako ukolébavku.
   await rodic.getByRole("button", { name: "Nastavení" }).click()
+  await rodic.getByRole("tab", { name: "Zvuky" }).click()
+  ok(
+    (await rodic.locator("#nast-prahOzyva").isHidden()) && (await rodic.locator("[data-vlastni-zvuky]").isVisible()),
+    "záložky v nastavení: vidět je jen vybraná",
+  )
   await rodic.locator("[data-vlastni-zvuky] input[type=file]").setInputFiles(pisnicka)
   await rodic.locator("[data-zvuk='Písnička']").waitFor({ timeout: 10000 })
   ok(true, "rodič nahrál vlastní zvuk „Písnička“")
@@ -276,8 +333,24 @@ try {
     return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
   })
   await rodic.getByRole("button", { name: "Nastavení" }).click()
+  await rodic.getByRole("tab", { name: "Budíček" }).click()
   const budik = rodic.locator("[data-budik]")
+  ok(await budik.getByLabel("Hlasitost budíčku").isVisible(), "budíček má vlastní hlasitost")
   await budik.getByLabel("Budíček zapnutý").check()
+  // Východ slunce: budíček za 5 min, svítání 10 min předem → obrazovka
+  // chůvičky už se rozsvěcí.
+  const zaPet = await dite.evaluate(() => {
+    const d = new Date(Date.now() + 5 * 60_000)
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
+  })
+  await budik.getByLabel("Čas budíčku").fill(zaPet)
+  await budik.getByLabel("Jen jednou (po zazvonění se sám vypne)").check()
+  await budik.getByLabel("Východ slunce na obrazovce chůvičky").selectOption("10")
+  await budik.getByRole("button", { name: "Uložit budíček" }).click()
+  await dite.waitForFunction(() => Number(document.querySelector("[data-hlidani]")?.dataset.svitani) > 0, null, { timeout: 15000 })
+  const svitano = Number(await dite.locator("[data-hlidani]").getAttribute("data-svitani"))
+  ok(svitano >= 40 && svitano <= 70, `východ slunce: obrazovka chůvičky se rozsvěcí (${svitano} %)`)
+  await budik.getByLabel("Jen jednou (po zazvonění se sám vypne)").uncheck()
   await budik.getByLabel("Čas budíčku").fill(ted)
   await budik.getByLabel("Jen jednou (po zazvonění se sám vypne)").check()
   ok(await budik.getByLabel("Po", { exact: true }).isDisabled(), "budíček jen jednou: dny se nevybírají")
@@ -290,6 +363,8 @@ try {
   await dite.locator("[data-hlidani]", { hasText: "Zvoní budíček" }).waitFor({ timeout: 5000 })
   ok(true, `budíček v ${ted} zvoní na chůvičce, rodič to vidí`)
   await rodic.getByRole("button", { name: "Vypnout budíček" }).click()
+  await dite.waitForFunction(() => !document.querySelector("[data-hlidani]")?.dataset.svitani, null, { timeout: 15000 })
+  ok(true, "po vypnutí budíčku je obrazovka chůvičky zase černá")
   await rodic.locator(".stitek", { hasText: "Budíček zvoní" }).waitFor({ state: "detached", timeout: 10000 })
   await rodic.locator(".stitek", { hasText: /^Budíček / }).waitFor({ state: "detached", timeout: 10000 })
   ok(true, "rodič budíček vypnul; jednorázový se sám vypnul")
@@ -318,6 +393,9 @@ try {
   await rodic.getByRole("button", { name: "Historie noci" }).click()
   await rodic.locator("canvas.graf").waitFor()
   ok(true, "historie noci se otevřela")
+  await rodic.locator(".souhrn strong").waitFor({ timeout: 10000 })
+  const spanek = await rodic.locator(".souhrn").textContent()
+  ok(/Hlídá od \d+:\d+/.test(spanek) && /Probuzení: \d+×|Bez probuzení/.test(spanek), `spánkový souhrn: ${spanek.slice(0, 90)}`)
   // Graf jde přiblížit (kolečko / dva prsty), posunout a vrátit na 24 h.
   const rozsahGrafu = rodic.locator(".okno .radek.mezi > span").first()
   const celyGraf = await rozsahGrafu.textContent()
@@ -333,6 +411,19 @@ try {
   ok((await rozsahGrafu.textContent()) !== priblizeny, `tažení graf posune: ${await rozsahGrafu.textContent()}`)
   await rodic.getByRole("button", { name: "24 h" }).click()
   ok((await rodic.getByRole("button", { name: "24 h" }).getAttribute("aria-pressed")) === "true", "volba 24 h ukáže celý den")
+  await rodic.locator(".okno").getByRole("button", { name: "Zavřít" }).click()
+
+  // Fotka na vyžádání: chůvička zapne kameru, pošle snímek, rodič ho vidí.
+  await rodic.getByRole("button", { name: "Fotka" }).click()
+  await rodic.locator("img.fotka:not([hidden])").waitFor({ timeout: 20000 })
+  const sirkaFotky = await rodic.locator("img.fotka").evaluate((i) => i.decode().then(() => i.naturalWidth))
+  ok(sirkaFotky > 0 && sirkaFotky <= 960, `fotka z chůvičky dorazila (${sirkaFotky} px)`)
+  await rodic.getByText(/Vyfoceno v \d+:\d+/).waitFor()
+  if (SNIMKY) await rodic.screenshot({ path: `${SNIMKY}/rodic-fotka.png` })
+  // Kamera se po fotce zase vypne.
+  await dite.waitForFunction(() => !document.querySelector("video"), null, { timeout: 5000 }).catch(() => {})
+  await rodic.locator(".okno").getByRole("button", { name: "Zavřít" }).click()
+  await rodic.getByRole("button", { name: "Historie noci" }).click()
   if (SNIMKY) await rodic.screenshot({ path: `${SNIMKY}/rodic-historie.png` })
   await rodic.getByRole("button", { name: "Zavřít" }).click()
 

@@ -127,10 +127,41 @@ export function panelNastaveni(nastaveni, naZmenu) {
   })
   const prekresliPasma = () => pole.forEach((f) => f.pasmo())
   prekresliPasma()
+  // Zapínací volby — přepínače, ne posuvníky.
+  const prepinace = [
+    {
+      klic: "rozpoznatPlac",
+      nazev: t("Rozpoznávat pláč"),
+      popis: t("Než pošle upozornění, chůvička posoudí, jestli zvuk vydává dítě. Řeč dospělých, hudbu, televizi nebo vysavač neohlásí. Když si není jistá, ohlásí."),
+    },
+    {
+      klic: "prizpusobitSumu",
+      nazev: t("Přizpůsobit prahy stálému šumu"),
+      popis: t("Ventilátor, čistička nebo šum v noci prahy zvednou (nejvýš o 20), aby nespouštěly poplach. Pláč a řeč je nezvednou."),
+    },
+  ].map((p) => {
+    const vstup = el("input", {
+      type: "checkbox",
+      id: `nast-${p.klic}`,
+      checked: nastaveni[p.klic] !== false,
+      onchange: (e) => naZmenu({ [p.klic]: e.target.checked }),
+    })
+    return {
+      p,
+      vstup,
+      prvek: el(
+        "div",
+        { style: { display: "grid", gap: "4px" } },
+        el("label", { class: "prepinac", for: `nast-${p.klic}` }, vstup, p.nazev),
+        el("span", { class: "slabe mala", text: p.popis }),
+      ),
+    }
+  })
   return {
-    prvek: el("div", { style: { display: "grid", gap: "14px" } }, ...pole.map((f) => f.prvek)),
+    prvek: el("div", { style: { display: "grid", gap: "14px" } }, ...pole.map((f) => f.prvek), ...prepinace.map((x) => x.prvek)),
     aktualizuj(n) {
       for (const f of pole) if (f.p.klic in n) f.zvenku(n[f.p.klic])
+      for (const x of prepinace) if (typeof n[x.p.klic] === "boolean") x.vstup.checked = n[x.p.klic]
       prekresliPasma()
     },
   }

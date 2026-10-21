@@ -1,6 +1,9 @@
 services:
   chuvicka:
-    build: .
+    # Hotový obraz (amd64 i arm64, tedy i Raspberry Pi). Sestavit sám:
+    # odkomentujte `build: .` a spusťte `docker compose up -d --build`.
+    image: ghcr.io/toomaaseek/chuvicka-baby-monitor:latest
+    # build: .
     container_name: chuvicka
     env_file: .env
     environment:

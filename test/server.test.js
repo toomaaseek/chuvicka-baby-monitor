@@ -32,7 +32,7 @@ before(async () => {
         assert.equal(znovu.status, 304)
         // Stránka smí jen vlastní skripty a spojení.
         const csp = (await fetch(`${URL_}/`)).headers.get("content-security-policy")
-        assert.match(csp, /script-src 'self';/)
+        assert.match(csp, /script-src 'self' 'wasm-unsafe-eval';/)
         assert.match(csp, /frame-ancestors 'none'/)
         return
       }

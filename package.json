@@ -1,18 +1,20 @@
 {
   "name": "chuvicka",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "license": "MIT",
   "type": "module",
   "description": "Baby monitor from two phones and your own server: alerts, listening in, talk-back, lullabies and an alarm.",
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server.js",
-    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js",
+    "model": "node scripts/stahni-model.mjs"
   },
   "engines": {
     "node": ">=22.5"
   },
   "dependencies": {
+    "@mediapipe/tasks-audio": "1.1.1",
     "jsqr": "^1.4.0",
     "qrcode": "^1.5.4",
     "web-push": "^3.6.7",

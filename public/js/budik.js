@@ -28,7 +28,12 @@ export const VYCHOZI_BUDIK = {
   jednou: false,
   /** „ukolebavka" (vestavěná melodie), nebo „soubor:<id>" z nahraných. */
   zvuk: "ukolebavka",
+  /** Východ slunce: kolik minut před budíčkem se obrazovka začne rozsvěcet (0 = ne). */
+  svitani: 0,
 }
+
+/** Volby východu slunce v minutách. */
+export const SVITANI = [0, 10, 15, 20, 30]
 
 /** Jak dlouho budíček nejdéle hraje a za kolik sekund zesílí naplno. */
 export const DELKA_MINUT = 15
@@ -50,6 +55,7 @@ export function srovnejBudik(vstup) {
   if (Array.isArray(vstup.dny)) b.dny = [...new Set(vstup.dny.map(Number).filter((d) => Number.isInteger(d) && d >= 1 && d <= 7))].sort()
   b.jednou = vstup.jednou === true
   if (vstup.zvuk === "ukolebavka" || jeZvukSouboru(vstup.zvuk)) b.zvuk = vstup.zvuk
+  if (SVITANI.includes(Number(vstup.svitani))) b.svitani = Number(vstup.svitani)
   return b
 }
 
@@ -72,6 +78,44 @@ export function maZvonit(budik, ted, posledni) {
   if (!budik.jednou && !budik.dny.includes(den)) return null
   const klic = klicDne(zacatek)
   return klic === posledni ? null : klic
+}
+
+/**
+ * Východ slunce: jak daleko je rozsvěcení (0–1), nebo null, když se
+ * nesvítá. Stejné dny jako budíček; `posledni` = den, kdy už zazvonil.
+ */
+export function svitani(budik, ted, posledni) {
+  if (!budik?.zapnuto || !budik.svitani) return null
+  const [h, m] = budik.cas.split(":").map(Number)
+  const zvoneni = new Date(ted)
+  zvoneni.setHours(h, m, 0, 0)
+  const zacatek = zvoneni.getTime() - budik.svitani * 60_000
+  if (ted < zacatek || ted >= zvoneni.getTime()) return null
+  const den = zvoneni.getDay() || 7
+  if (!budik.jednou && !budik.dny.includes(den)) return null
+  if (klicDne(zvoneni) === posledni) return null
+  return (ted - zacatek) / (budik.svitani * 60_000)
+}
+
+/**
+ * Barva rozsvěcené obrazovky: černá → tmavě červená → oranžová → teplá
+ * bílá, jako svítání. `p` 0–1.
+ */
+const BARVY_SVITANI = [
+  [0, [0, 0, 0]],
+  [0.25, [40, 4, 0]],
+  [0.55, [140, 40, 4]],
+  [0.8, [235, 140, 60]],
+  [1, [255, 236, 205]],
+]
+export function barvaSvitani(p) {
+  const x = Math.max(0, Math.min(1, p))
+  let i = 1
+  while (i < BARVY_SVITANI.length - 1 && x > BARVY_SVITANI[i][0]) i++
+  const [a, ca] = BARVY_SVITANI[i - 1]
+  const [b, cb] = BARVY_SVITANI[i]
+  const k = (x - a) / (b - a)
+  return `rgb(${ca.map((c, j) => Math.round(c + (cb[j] - c) * k)).join(", ")})`
 }
 
 /** „6:30 · Po–Pá", „7:00 · každý den", „6:45 · jednou". */

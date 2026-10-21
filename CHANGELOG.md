@@ -4,6 +4,41 @@ Verze se zvedá v `package.json` a v `public/sw.js` (název mezipaměti),
 commit nese verzi v názvu a dostane tag `vX.Y.Z`. Aplikace verzi ukazuje
 v hlavičce vedle názvu.
 
+## 0.8.0 — 20. 10. 2026
+Nápady z ostatních projektů chůviček na GitHubu.
+- **Rozpoznání pláče.** Než upozornění odejde, chůvička posoudí poslední
+  3 s modelem YAMNet (MediaPipe, běží v telefonu). Řeč dospělých, hudba,
+  televize, vysavač, pes nebo šumítko upozornění nepošlou — do historie
+  se zapíše „Hluk, ne pláč — neohlášeno" a chůvička 30 s počká (ne celou
+  pauzu, ať se hned následující pláč ohlásí). Když si model není jistý,
+  nebo se nenačte, upozornění odejde jako dřív. Je ve výchozím stavu
+  vypnuté, zapíná se v Nastavení › Citlivost (model se pak stáhne). Model se do gitu nedává: Dockerfile ho stáhne a ověří,
+  bez Dockeru `npm run model`. Statistiky MediaPipe pro Google se zahazují.
+- **Prahy podle stálého šumu.** Detektor každých 10 s pozná vyrovnaný
+  zvuk (ventilátor, čistička) a prahy drží nad ním (rezerva jako
+  kalibrace, nejvýš +20). Pláč ani řeč šum nezvednou. Rodič vidí štítek
+  „Prahy nad šumem +N" a skutečné prahy na ukazateli. Vypínatelné.
+- **Fotka na vyžádání.** Rodič klepne na Fotka, chůvička na chvíli zapne
+  kameru (zadní nebo přední), snímek zmenší, ve tmě zesvětlí a pošle.
+  Server ho drží jen v paměti 5 minut. Kameru jde na chůvičce povolit
+  předem.
+- **Spánkový souhrn** v historii noci: od kdy do kdy se hlídalo, počet
+  probuzení (upozornění do 10 min od sebe = jedno), z toho s pláčem,
+  „klid od" a nejdelší klid.
+- **Nastavení v záložkách:** Citlivost, Budíček, Zvuky, Obecné. Na
+  telefonu u dítěte je nastavení sbalené, když je spárovaný rodič
+  (nastavuje se u něj).
+- **Budíček:** vlastní hlasitost (dřív hrál hlasitostí hlasu; starší
+  nastavení ji převezme) a **východ slunce** — černá obrazovka chůvičky
+  se 10–30 min před budíčkem postupně rozsvítí do teplé barvy.
+- Posuvník se mění jen tažením za jezdec: při posouvání nastavení prstem
+  se dřív hodnota přeskočila tam, kam prst dopadl.
+- **Heslo pro přidání telefonu** (`CHUVICKA_HESLO`, volitelné). Telefon
+  rodiče, který otevře QR kód chůvičky, ho nepotřebuje.
+- Repozitář: SECURITY.md, „vyzkoušejte za 2 minuty", GitHub Actions
+  (testy včetně prohlížeče) a ve veřejném repozitáři hotový obraz
+  `ghcr.io/toomaaseek/chuvicka-baby-monitor` pro amd64 i arm64.
+
 ## 0.7.0 — 20. 10. 2026
 - **Angličtina.** Aplikace mluví česky nebo anglicky podle jazyka
   telefonu; přepínač „Jazyk / Language" je na úvodní obrazovce,

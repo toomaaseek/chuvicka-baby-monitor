@@ -3,3 +3,4 @@ data/
 chuvicka.env
 .env
 docker-compose.yml
+public/vendor/yamnet.tflite

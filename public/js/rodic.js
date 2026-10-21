@@ -1,10 +1,11 @@
-import { el, obrazovka, okno, cas, datum, predChvili, nazevAplikace, volbaJazyka } from "./dom.js"
+import { el, obrazovka, okno, cas, datum, predChvili, nazevAplikace, volbaJazyka, zalozky } from "./dom.js"
 import { Spojeni, api } from "./spojeni.js"
 import { kontext, mikrofon, zpracujMikrofon, prehravac } from "./zvuk.js"
 import { panelNastaveni, ukazatel, textKalibrace } from "./nastaveni.js"
 import { ZVUKY, nazevVestaveneho } from "./zvuky.js"
-import { DNY, nazevDne, srovnejBudik, popisBudiku, idSouboru } from "./budik.js"
+import { DNY, nazevDne, srovnejBudik, popisBudiku, idSouboru, SVITANI } from "./budik.js"
 import { skenuj } from "./skener.js"
+import { souhrnSpanku, delka } from "./spanek.js"
 import { t, jazyk, nastavJazyk } from "./i18n.js"
 
 /** Popis události pro seznam — v jazyce telefonu, proto až při vykreslení. */
@@ -23,6 +24,7 @@ const popisUdalosti = (druh) =>
     pozastaveno: t("Upozornění pozastavena"),
     obnoveno: t("Upozornění obnovena"),
     budik: t("Zvonil budíček"),
+    potlaceno: t("Hluk, ne pláč — neohlášeno"),
   })[druh] ?? druh
 
 /** „Ozývá se · 12 s" — druh a délka. */
@@ -77,6 +79,7 @@ export function spustRodice(zarizeni, { naZruseni, kodKParovani }) {
   } catch {}
   let zamekObrazovky = null
   let otevreneNastaveni = null // { chuvicka, panel, kalibraceTl } — otevřené okno nastavení
+  let otevrenaFotka = null // { chuvicka, prisla(zprava) } — otevřené okno fotky
   /** Nahrané zvuky (sdílené všemi zařízeními) a co se má překreslit, když se změní. */
   let zvuky = []
   let naZmenuZvuku = null
@@ -113,7 +116,7 @@ export function spustRodice(zarizeni, { naZruseni, kodKParovani }) {
         meric.hladina(m.h)
       } else if (m.typ === "udalost") {
         pridejUdalost({ ...m, kdy: m.kdy ?? Date.now() })
-        if (document.visibilityState === "visible") navigator.vibrate?.(m.druh === "place" ? [400, 150, 400] : 200)
+        if (document.visibilityState === "visible" && (m.druh === "ozyva" || m.druh === "place")) navigator.vibrate?.(m.druh === "place" ? [400, 150, 400] : 200)
         vykresliUdalosti()
       } else if (m.typ === "odparovano") {
         // Chůvička spojení zrušila (nebo byla zrušena) — ze seznamu pryč.
@@ -125,6 +128,8 @@ export function spustRodice(zarizeni, { naZruseni, kodKParovani }) {
       } else if (m.typ === "zvuky") {
         zvuky = m.zvuky
         naZmenuZvuku?.()
+      } else if (m.typ === "fotka" && otevrenaFotka?.chuvicka === m.chuvicka) {
+        otevrenaFotka.prisla(m)
       } else if (m.typ === "kalibrace" && otevreneNastaveni?.chuvicka === m.chuvicka) {
         const tl = otevreneNastaveni.kalibraceTl
         tl.disabled = m.stav === "meri"
@@ -347,9 +352,90 @@ export function spustRodice(zarizeni, { naZruseni, kodKParovani }) {
       c.ukolebavka
         ? el("button", { onclick: () => (spojeni.posli({ typ: "ukolebavka", chuvicka: c.chuvicka, zvuk: null }), o.remove()) }, t("Zastavit"))
         : null,
-      el("p", { class: "slabe mala", text: t("Vlastní ukolébavku nahraješ v Nastavení › Vlastní zvuky. Nahraná hraje dokola.") }),
+      el("p", { class: "slabe mala", text: t("Vlastní ukolébavku nahraješ v Nastavení › Zvuky. Nahraná hraje dokola.") }),
     )
     sledujZvuky(o, prekresli)
+  }
+
+  /**
+   * Fotka na vyžádání: chůvička na chvíli zapne kameru a pošle jeden
+   * snímek. Kamera se pamatuje v tomhle telefonu (zadní / přední).
+   */
+  function oknoFotky(c) {
+    const KLIC_KAMERA = "chuvicka-kamera"
+    let kamera = "zadni"
+    try {
+      kamera = localStorage.getItem(KLIC_KAMERA) === "predni" ? "predni" : "zadni"
+    } catch {}
+    const obraz = el("img", { class: "fotka", alt: t("Fotka z chůvičky") })
+    const stav = el("p", { class: "slabe", "aria-live": "polite" })
+    let cekani = null
+    let url = null
+    const vyber = el(
+      "select",
+      { "aria-label": t("Kamera"), onchange: (e) => {
+        kamera = e.target.value
+        try {
+          localStorage.setItem(KLIC_KAMERA, kamera)
+        } catch {}
+      } },
+      el("option", { value: "zadni", text: t("Zadní kamera"), selected: kamera === "zadni" }),
+      el("option", { value: "predni", text: t("Přední kamera"), selected: kamera === "predni" }),
+    )
+    const vyfotit = () => {
+      stav.className = "slabe"
+      stav.textContent = t("Fotím…")
+      clearTimeout(cekani)
+      cekani = setTimeout(() => (stav.textContent = t("Chůvička neodpověděla. Zkus to znovu.")), 15000)
+      spojeni.posli({ typ: "fotka", chuvicka: c.chuvicka, kamera })
+    }
+    const znovu = el("button", { class: "hlavni", onclick: vyfotit }, t("Vyfotit znovu"))
+    const o = okno(
+      el("h2", { text: t("Fotka z chůvičky") }),
+      obraz,
+      stav,
+      el("div", { class: "mrizka-2" }, vyber, znovu),
+      el("p", { class: "slabe mala", text: t("Fotka se nikam neukládá. Ve tmě ji chůvička zesvětlí, bude zrnitá.") }),
+      el("button", { onclick: () => o.remove() }, t("Zavřít")),
+    )
+    obraz.hidden = true
+    otevrenaFotka = {
+      chuvicka: c.chuvicka,
+      async prisla(m) {
+        clearTimeout(cekani)
+        if (m.chyba) {
+          stav.className = "chyba"
+          stav.textContent =
+            m.chyba === "povoleni"
+              ? t("Chůvička nemá povolenou kameru. Povol ji na telefonu u dítěte (Povolit kameru pro fotku).")
+              : t("Kamera na chůvičce nejde zapnout.")
+          return
+        }
+        try {
+          const r = await fetch(`/api/fotka?chuvicka=${encodeURIComponent(c.chuvicka)}`, {
+            headers: { "X-Zarizeni": `${zarizeni.id}:${zarizeni.tajemstvi}` },
+          })
+          if (!r.ok) throw new Error(t("Chyba {kod}", { kod: r.status }))
+          if (url) URL.revokeObjectURL(url)
+          url = URL.createObjectURL(await r.blob())
+          obraz.src = url
+          obraz.hidden = false
+          stav.className = "slabe"
+          stav.textContent = t("Vyfoceno v {cas}", { cas: cas(m.kdy) })
+        } catch (e) {
+          stav.className = "chyba"
+          stav.textContent = e.message
+        }
+      },
+    }
+    new MutationObserver((_, p) => {
+      if (o.isConnected) return
+      if (otevrenaFotka?.chuvicka === c.chuvicka) otevrenaFotka = null
+      clearTimeout(cekani)
+      if (url) URL.revokeObjectURL(url)
+      p.disconnect()
+    }).observe(document.body, { childList: true })
+    vyfotit()
   }
 
   function oknoPozastavit(c) {
@@ -436,30 +522,37 @@ export function spustRodice(zarizeni, { naZruseni, kodKParovani }) {
     otevreneNastaveni = { chuvicka: c.chuvicka, panel, kalibraceTl }
     const nazev = el("input", { type: "text", value: c.nazev, maxlength: 40, "aria-label": t("Název chůvičky") })
     nazev.addEventListener("change", () => spojeni.posli({ typ: "prejmenovat", chuvicka: c.chuvicka, nazev: nazev.value }))
+    const odparovat = el(
+      "button",
+      {
+        class: "odkaz",
+        onclick: async () => {
+          await api("/api/rozparovat", zarizeni, { chuvicka: c.chuvicka })
+          chuvicky.delete(c.chuvicka)
+          vybrana = chuvicky.keys().next().value ?? null
+          o.remove()
+          vykresli()
+        },
+      },
+      t("Odpárovat tuto chůvičku"),
+    )
     const o = okno(
       el("h2", { text: t("Nastavení chůvičky") }),
-      el("label", { class: "pole" }, t("Název"), nazev),
-      kalibraceTl,
-      el("p", { class: "slabe mala", text: t("Chůvička změří ticho v pokoji a prahy nastaví nad něj. Během měření buď potichu.") }),
-      panel.prvek,
-      budikSekce.prvek,
-      zvukySekce.prvek,
-      volbaJazyka(),
-      el("button", { onclick: () => o.remove() }, t("Hotovo")),
-      el(
-        "button",
+      ...zalozky("nastaveni", [
         {
-          class: "odkaz",
-          onclick: async () => {
-            await api("/api/rozparovat", zarizeni, { chuvicka: c.chuvicka })
-            chuvicky.delete(c.chuvicka)
-            vybrana = chuvicky.keys().next().value ?? null
-            o.remove()
-            vykresli()
-          },
+          id: "citlivost",
+          nazev: t("Citlivost"),
+          obsah: [
+            kalibraceTl,
+            el("p", { class: "slabe mala", text: t("Chůvička změří ticho v pokoji a prahy nastaví nad něj. Během měření buď potichu.") }),
+            panel.prvek,
+          ],
         },
-        t("Odpárovat tuto chůvičku"),
-      ),
+        { id: "budik", nazev: t("Budíček"), obsah: [budikSekce.prvek] },
+        { id: "zvuky", nazev: t("Zvuky"), obsah: [zvukySekce.prvek] },
+        { id: "obecne", nazev: t("Obecné"), obsah: [el("label", { class: "pole" }, t("Název"), nazev), volbaJazyka(), odparovat] },
+      ]),
+      el("button", { onclick: () => o.remove() }, t("Hotovo")),
     )
     sledujZvuky(o, () => {
       budikSekce.prekresli()
@@ -476,6 +569,28 @@ export function spustRodice(zarizeni, { naZruseni, kodKParovani }) {
   /** Budíček chůvičky: zapnutí, čas, dny (nebo jen jednou) a písnička. */
   function sekceBudik(c) {
     let b = srovnejBudik(c.nastaveni.budik)
+    // Hlasitost budíčku — zvlášť od hlasu a ukolébavky, ukládá se hned po puštění.
+    const procenta = (v) => `${Math.round(v * 100)} %`
+    const hlasitostVstup = el("input", {
+      type: "range",
+      id: "budik-hlasitost",
+      min: 0,
+      max: 1,
+      step: 0.05,
+      style: { "--povoleno": "var(--akcent)", "--mez-od": "0%", "--mez-do": "100%" },
+    })
+    hlasitostVstup.value = String(c.nastaveni.hlasitostBudiku ?? c.nastaveni.hlasitost ?? 0.7)
+    const hlasitostText = el("span", { class: "hodnota", text: procenta(Number(hlasitostVstup.value)) })
+    hlasitostVstup.addEventListener("input", () => (hlasitostText.textContent = procenta(Number(hlasitostVstup.value))))
+    hlasitostVstup.addEventListener("change", () =>
+      spojeni.posli({ typ: "nastaveni", chuvicka: c.chuvicka, data: { hlasitostBudiku: Number(hlasitostVstup.value) } }),
+    )
+    const hlasitostPole = el(
+      "label",
+      { class: "pole", for: "budik-hlasitost" },
+      el("span", { class: "radek mezi" }, el("span", { text: t("Hlasitost budíčku") }), hlasitostText),
+      hlasitostVstup,
+    )
     const zapnuto = el("input", { type: "checkbox", checked: b.zapnuto })
     const casPole = el("input", { type: "time", value: b.cas, "aria-label": t("Čas budíčku") })
     const jednou = el("input", { type: "checkbox", checked: b.jednou })
@@ -485,6 +600,13 @@ export function spustRodice(zarizeni, { naZruseni, kodKParovani }) {
     jednou.addEventListener("change", zamkniDny)
     zamkniDny()
     const vyber = el("select", { "aria-label": t("Písnička k buzení") })
+    const svitaniVyber = el(
+      "select",
+      { id: "budik-svitani" },
+      ...SVITANI.map((m) =>
+        el("option", { value: m, text: m ? t("{n} min před budíčkem", { n: m }) : t("Ne"), selected: m === b.svitani }),
+      ),
+    )
     const prekresli = () =>
       vyber.replaceChildren(...volbyZvuku([{ klic: "ukolebavka", nazev: t("Ukolébavka (vestavěná)") }], vyber.value || b.zvuk).filter(Boolean))
     prekresli()
@@ -496,6 +618,7 @@ export function spustRodice(zarizeni, { naZruseni, kodKParovani }) {
         jednou: jednou.checked,
         dny: dny.filter((x) => x.checked).map((x) => Number(x.value)),
         zvuk: vyber.value,
+        svitani: Number(svitaniVyber.value),
       })
       if (novy.zapnuto && !novy.jednou && !novy.dny.length) {
         zprava.className = "chyba mala"
@@ -514,10 +637,9 @@ export function spustRodice(zarizeni, { naZruseni, kodKParovani }) {
       prvek: el(
         "div",
         { style: { display: "grid", gap: "12px" }, "data-budik": "" },
-        el("h2", { text: t("Budíček") }),
         el("p", {
           class: "slabe mala",
-          text: t("Zvoní na chůvičce u dítěte, když hlídá. Začne potichu, za půl minuty hraje naplno (hlasitost výš), nejdéle 15 minut. Vypneš ho tady na kartě nebo u dítěte po odemknutí obrazovky."),
+          text: t("Zvoní na chůvičce u dítěte, když hlídá. Začne potichu, za půl minuty hraje nastavenou hlasitostí, nejdéle 15 minut. Vypneš ho tady na kartě nebo u dítěte po odemknutí obrazovky."),
         }),
         el("label", { class: "prepinac" }, zapnuto, t("Budíček zapnutý")),
         el("label", { class: "pole" }, t("Čas"), casPole),
@@ -530,6 +652,17 @@ export function spustRodice(zarizeni, { naZruseni, kodKParovani }) {
         ),
         el("label", { class: "prepinac" }, jednou, t("Jen jednou (po zazvonění se sám vypne)")),
         el("label", { class: "pole" }, t("Písnička"), vyber),
+        hlasitostPole,
+        el(
+          "label",
+          { class: "pole", for: "budik-svitani" },
+          t("Východ slunce na obrazovce chůvičky"),
+          svitaniVyber,
+          el("span", {
+            class: "slabe mala",
+            text: t("Černá obrazovka se před budíčkem postupně rozsvítí do teplé barvy. Jas telefonu u dítěte nech kvůli tomu trochu nad minimem."),
+          }),
+        ),
         el("button", { class: "hlavni", onclick: uloz }, t("Uložit budíček")),
         zprava,
       ),
@@ -653,7 +786,6 @@ export function spustRodice(zarizeni, { naZruseni, kodKParovani }) {
       prvek: el(
         "div",
         { style: { display: "grid", gap: "12px" }, "data-vlastni-zvuky": "" },
-        el("h2", { text: t("Vlastní zvuky") }),
         el("p", {
           class: "slabe mala",
           text: t("Ukolébavky a písničky k buzení. Uvidí je všechny telefony s Chůvičkou. mp3, m4a, wav nebo ogg, nejvýš {mb} MB.", { mb: MAX_ZVUK_MB }),
@@ -756,7 +888,33 @@ export function spustRodice(zarizeni, { naZruseni, kodKParovani }) {
           minut,
         })
       : t("Spojení i zvuk bez výpadku")
-    return [el("span", { text: baterie }), el("span", { class: v.length ? "u-place" : "", text: spojeni })]
+    return [...radkySpanku(h), el("span", { text: baterie }), el("span", { class: v.length ? "u-place" : "", text: spojeni })]
+  }
+
+  /** Spánkový souhrn posledního hlídání (`spanek.js`). */
+  function radkySpanku(h) {
+    const s = souhrnSpanku(h.udalosti, Date.now())
+    if (!s) return []
+    const hlidani = s.probiha
+      ? t("Hlídá od {od} ({delka})", { od: cas(s.od), delka: delka(s.do - s.od) })
+      : t("Hlídání {od}–{do} ({delka})", { od: cas(s.od), do: cas(s.do), delka: delka(s.do - s.od) })
+    const probuzeni = !s.probuzeni
+      ? t("Bez probuzení")
+      : t("Probuzení: {n}×", { n: s.probuzeni }) + (s.sPlacem ? ", " + t("z toho s pláčem {n}×", { n: s.sPlacem }) : "")
+    const klid = [
+      s.klidOd ? t("klid od {cas}", { cas: cas(s.klidOd) }) : null,
+      s.nejdelsiKlid
+        ? t("nejdelší klid {delka} ({od}–{do})", {
+            delka: delka(s.nejdelsiKlid.do - s.nejdelsiKlid.od),
+            od: cas(s.nejdelsiKlid.od),
+            do: cas(s.nejdelsiKlid.do),
+          })
+        : null,
+    ].filter(Boolean)
+    return [
+      el("strong", { text: hlidani }),
+      el("span", { class: "plny", text: [probuzeni, ...klid].join(" · ") }),
+    ]
   }
 
   /**
@@ -1060,7 +1218,8 @@ export function spustRodice(zarizeni, { naZruseni, kodKParovani }) {
       )
       return
     }
-    meric.prahy(c.nastaveni)
+    meric.prahy(c.prahy ?? c.nastaveni)
+    const zvednuto = c.prahy && c.prahy.prahOzyva > c.nastaveni.prahOzyva
     const pozastaveno = c.nastaveni.pozastavenoDo > Date.now()
     mluvTl = el("button", { class: "mluvit", disabled: !c.online }, t("Mluvit (podrž)"))
     const tl = mluvTl
@@ -1099,6 +1258,13 @@ export function spustRodice(zarizeni, { naZruseni, kodKParovani }) {
           : c.nastaveni.budik?.zapnuto
             ? el("span", { class: "stitek", title: t("Budíček na chůvičce"), text: t("Budíček {budik}", { budik: popisBudiku(c.nastaveni.budik) }) })
             : null,
+        zvednuto && !c.ukolebavka && !c.budik
+          ? el("span", {
+              class: "stitek",
+              title: t("Chůvička slyší stálý šum (ventilátor, čistička) a prahy zvedla nad něj."),
+              text: t("Prahy nad šumem +{n}", { n: c.prahy.prahOzyva - c.nastaveni.prahOzyva }),
+            })
+          : null,
         online ? null : el("span", { class: "stitek spatne", text: t("Telefon bez internetu") }),
       ),
       c.budik
@@ -1112,8 +1278,9 @@ export function spustRodice(zarizeni, { naZruseni, kodKParovani }) {
         mluvTl,
         el("button", { disabled: !c.online, onclick: () => oknoUkolebavka(c) }, c.ukolebavka ? t("Ukolébavka hraje") : t("Ukolébavka")),
         el("button", { onclick: () => oknoPozastavit(c) }, pozastaveno ? t("Pozastaveno") : t("Pozastavit / ukončit")),
-        el("button", { onclick: () => oknoNastaveni(c) }, t("Nastavení")),
+        el("button", { disabled: !c.online, onclick: () => oknoFotky(c) }, t("Fotka")),
         el("button", { onclick: () => oknoHistorie(c) }, t("Historie noci")),
+        el("button", { class: "cely", onclick: () => oknoNastaveni(c) }, t("Nastavení")),
       ),
       "wakeLock" in navigator
         ? el(

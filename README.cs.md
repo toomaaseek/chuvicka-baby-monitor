@@ -1,5 +1,7 @@
 # Chůvička
 
+[![CI](https://github.com/toomaaseek/chuvicka-baby-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/toomaaseek/chuvicka-baby-monitor/actions/workflows/ci.yml)
+
 *English: [README.md](README.md)*
 
 Dětská chůvička ze dvou telefonů a vlastního malého serveru. Jeden telefon
@@ -31,16 +33,25 @@ v nastavení.
 - **Dvě úrovně upozornění:** *ozývá se* (tišší, delší zvuky) a *pláče*
   (hlasitě). Prahy a doby jdou nastavit, nebo chůvička změří ticho
   v pokoji a nastaví se sama.
+- **Rozpoznání pláče přímo v telefonu** (na přání): než upozornění odejde, malý
+  model (YAMNet od Googlu) posoudí poslední 3 sekundy. Řeč dospělých,
+  hudba, televize, vysavač ani pes vás nevzbudí; když si model jistý
+  není, upozornění odejde. Z telefonu nic neodchází.
+- **Prahy podle stálého šumu:** ventilátor nebo šumítko zapnuté v noci
+  prahy zvednou, místo aby spouštěly poplach.
 - **Push upozornění** i na zamčený telefon rodiče, k tomu hlášení, když
   chůvička ztratí spojení, přestane slyšet nebo jí dochází baterie.
 - **Příposlech** naživo a **vysílačka** (podržet a mluvit).
 - **Ukolébavka a šum:** vestavěný bílý, růžový a hnědý šum a ukolébavka,
   nebo vlastní nahrané písničky. Na konci se ztiší.
 - **Budíček:** zazvoní na chůvičce v nastavený čas, ve vybrané dny nebo
-  jednou.
+  jednou, s vlastní hlasitostí a volitelným **východem slunce**: obrazovka
+  chůvičky se před budíčkem postupně rozsvítí do teplé barvy.
 - **Historie noci:** graf hlasitosti za posledních 24 hodin (roztažení
-  dvěma prsty, posun tažením) s prahy, upozorněními, baterií a výpadky
-  a seznam událostí.
+  dvěma prsty, posun tažením) s prahy, upozorněními, baterií a výpadky,
+  spánkový souhrn (probuzení, nejdelší klid) a seznam událostí.
+- **Fotka na vyžádání:** chůvička na chvíli zapne kameru a pošle jeden
+  snímek, ve tmě zesvětlený.
 - **Pozastavení upozornění** na chvíli, nebo ukončení hlídání na dálku.
 - Víc telefonů rodičů k jedné chůvičce i víc chůviček k jednomu rodiči.
 - Párování jednorázovým QR kódem. Žádné účty ani e-maily.
@@ -51,8 +62,30 @@ v nastavení.
   kdy poslouchá.
 - Server drží hlasitost po minutách a události týden, pak je smaže.
 - Ukládají se jen zvuky, které rodiče sami nahrají.
+- Fotka na vyžádání zůstává jen v paměti serveru 5 minut, nikdy na disku.
+- Rozpoznání pláče běží v telefonu u dítěte. Knihovna MediaPipe se snaží
+  posílat Googlu anonymní statistiky používání; aplikace je zahodí
+  a Content Security Policy stránky by je stejně zablokovala.
 - Zařízení se prokazuje náhodným tajemstvím uloženým v telefonu.
   V databázi je jen jeho otisk SHA-256.
+
+## Vyzkoušejte za 2 minuty
+
+Na libovolném počítači s Dockerem, bez telefonů a bez HTTPS:
+
+```sh
+git clone https://github.com/toomaaseek/chuvicka-baby-monitor.git
+cd chuvicka-baby-monitor
+cp .env.example .env
+docker compose -f docker-compose.example.yml up
+```
+
+Otevřete <http://localhost:8080> dvakrát: ve dvou různých prohlížečích,
+nebo v normálním a anonymním okně (telefon si svou identitu pamatuje
+v úložišti prohlížeče, dvě normální okna by byla tentýž telefon). Jedno
+bude chůvička (použije mikrofon počítače), druhé rodič. Spárujte je kódem
+a spusťte hlídání. Push upozornění potřebují klíče z kroku 2 níže,
+všechno ostatní funguje.
 
 ## Co je potřeba
 
@@ -95,8 +128,11 @@ v nastavení.
 
    ```sh
    cp docker-compose.example.yml docker-compose.yml
-   docker compose up -d --build
+   docker compose up -d
    ```
+
+   Stáhne se hotový obraz (amd64 i arm64, takže i Raspberry Pi). Kdo si
+   ho chce sestavit sám, odkomentuje v compose `build: .` a přidá `--build`.
 
    Aplikace poslouchá na portu 8080 (v příkladu jen na `127.0.0.1`, takže
    na ni dosáhne jen reverzní proxy na stejném stroji).
@@ -134,6 +170,7 @@ v nastavení.
 
 ```sh
 npm ci --omit=dev
+npm run model   # stáhne model YAMNet pro rozpoznání pláče (4 MB)
 VAPID_PUBLIC_KEY=... VAPID_PRIVATE_KEY=... VAPID_SUBJECT=mailto:vy@example.com \
   node --disable-warning=ExperimentalWarning server.js
 ```
@@ -152,6 +189,7 @@ Data jdou do `data/` vedle `server.js`, pokud nenastavíte `DB`.
 | `CHUVICKA_MAX_ZVUK_MB` | `20` | Největší nahraný zvuk. |
 | `CHUVICKA_MAX_ZVUKY_MB` | `200` | Všechny nahrané zvuky dohromady. |
 | `CHUVICKA_IP_HLAVICKA` | — | Hlavička s adresou klienta od reverzní proxy, např. `x-real-ip` nebo `cf-connecting-ip`. |
+| `CHUVICKA_HESLO` | — | Heslo pro přidání nového telefonu. Telefon rodiče, který otevře QR kód chůvičky, ho nepotřebuje. Doporučené pro server dostupný z internetu. |
 
 ## Zálohy a aktualizace
 
@@ -161,12 +199,13 @@ Všechno je ve svazku `chuvicka-data`: databáze a nahrané zvuky. Záloha:
 docker compose cp chuvicka:/data ./zaloha-$(date +%F)
 ```
 
-Aktualizace: stáhnout nový kód a sestavit znovu:
+Aktualizace:
 
 ```sh
-git pull
-docker compose up -d --build
+docker compose pull && docker compose up -d
 ```
+
+(Při vlastním sestavení: `git pull && docker compose up -d --build`.)
 
 Otevřené telefony novou verzi poznají a nabídnou načtení. Server
 nerestartujte, když chůvička hlídá: rodiči by přišlo „Chůvička
@@ -175,10 +214,10 @@ neodpovídá", než se znovu připojí (obvykle během pár sekund).
 ## Dobré vědět
 
 - **Jeden server je pro jednu rodinu**, nebo pro lidi, kteří si věří.
-  Zaregistrovat telefon může kdokoli, kdo zná adresu, ale to samo
-  nedává přístup k žádné chůvičce: spárování potřebuje jednorázový kód
-  z chůvičky. Nahrané zvuky jsou ale společné pro všechny telefony na
-  serveru a smazat je může každý spárovaný rodič.
+  Bez `CHUVICKA_HESLO` může telefon zaregistrovat kdokoli, kdo zná
+  adresu. K chůvičce se tím nedostane (spárování chce jednorázový kód
+  z chůvičky), ale uvidí nahrané zvuky, které jsou společné pro všechny
+  telefony na serveru. S heslem přidá telefon jen ten, komu ho dáte.
 - Chůvička musí mít aplikaci otevřenou se zapnutou obrazovkou (aplikace
   ji drží černou a zamčenou proti dotykům). Patří na nabíječku. Aby ji
   dítě nezavřelo: Připnutí aplikace (Android) nebo Asistovaný přístup
@@ -209,6 +248,16 @@ node test/prohlizec.mjs http://localhost:8080
 Překlady: klíčem je český text v kódu, anglický slovník je
 `public/js/texty-en.js`. `npm test` neprojde, když překlad chybí.
 
+## Bezpečnost
+
+Viz [SECURITY.md](SECURITY.md): co aplikace chrání, na co si dát pozor
+a jak nahlásit zranitelnost.
+
 ## Licence
 
 [MIT](LICENSE)
+
+Rozpoznání pláče používá [MediaPipe Tasks Audio](https://www.npmjs.com/package/@mediapipe/tasks-audio)
+a model [YAMNet](https://ai.google.dev/edge/mediapipe/solutions/audio/audio_classifier),
+obojí od Googlu pod licencí Apache 2.0. Model se stahuje při sestavení,
+v repozitáři není.

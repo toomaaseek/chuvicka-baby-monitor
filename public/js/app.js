@@ -36,8 +36,8 @@ function kodZAdresy() {
   return m ? m[1].toUpperCase() : null
 }
 
-async function registruj(role) {
-  const z = await api("/api/registrace", null, { role, jazyk: jazyk() })
+async function registruj(role, heslo, kod) {
+  const z = await api("/api/registrace", null, { role, jazyk: jazyk(), heslo: heslo || undefined, kod: kod || undefined })
   localStorage.setItem(KLIC, JSON.stringify(z))
   return z
 }
@@ -68,11 +68,14 @@ function instalacniTlacitko() {
   )
 }
 
-function volbaRole(kod) {
+async function volbaRole(kod) {
   const chyba = el("p", { class: "chyba" })
+  // Server s heslem: telefon rodiče z QR kódu ho nepotřebuje, ostatní ano.
+  const sHeslem = await api("/api/zdravi").then((z) => z.heslo === true).catch(() => false)
+  const heslo = el("input", { type: "password", id: "heslo-serveru", autocomplete: "current-password" })
   const vyber = async (role) => {
     try {
-      const z = await registruj(role)
+      const z = await registruj(role, heslo.value, kod)
       spust(z, kod)
     } catch (e) {
       chyba.textContent = e.message
@@ -82,6 +85,15 @@ function volbaRole(kod) {
     nazevAplikace(),
     el("p", { class: "slabe", text: t("Jeden telefon leží u dítěte a poslouchá. Druhý má rodič — chodí na něj upozornění a může poslouchat a mluvit.") }),
     kod ? el("p", { text: t("Otevřel jsi kód z chůvičky — tenhle telefon bude rodičovský.") }) : null,
+    sHeslem && !kod
+      ? el(
+          "label",
+          { class: "pole", for: "heslo-serveru" },
+          t("Heslo serveru"),
+          heslo,
+          el("span", { class: "slabe mala", text: t("Dostanete ho od toho, kdo Chůvičku provozuje.") }),
+        )
+      : null,
     el("section", { class: "karta" }, el("h2", { text: t("Tenhle telefon bude…") }),
       el("button", { class: "hlavni velke", onclick: () => vyber("rodic") }, t("U rodiče")),
       kod ? null : el("button", { class: "velke", onclick: () => vyber("chuvicka") }, t("U dítěte (chůvička)")),

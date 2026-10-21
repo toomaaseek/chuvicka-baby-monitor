@@ -1,5 +1,7 @@
 # Chůvička
 
+[![CI](https://github.com/toomaaseek/chuvicka-baby-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/toomaaseek/chuvicka-baby-monitor/actions/workflows/ci.yml)
+
 *Čeština: [README.cs.md](README.cs.md)*
 
 A baby monitor made of two phones and your own small server. One phone
@@ -31,16 +33,28 @@ the settings.
 - **Two levels of alerts:** *stirring* (quiet, longer sounds) and *crying*
   (loud). Thresholds and durations are adjustable, or let the baby unit
   calibrate itself to the silence of the room.
+- **Crying recognition on the phone** (opt-in): before an alert goes out, a small
+  model (Google's YAMNet) checks the last 3 seconds. Adults talking, music,
+  TV, a vacuum cleaner or a dog don't wake you up; when the model isn't
+  sure, the alert goes out anyway. Nothing leaves the phone.
+- **Thresholds that follow steady noise:** a fan or white noise machine
+  switched on during the night raises the thresholds instead of setting
+  off alerts.
 - **Push notifications** even when the parent phone is locked, plus alerts
   when the baby unit goes offline, its microphone stops or its battery
   runs low.
 - **Listen in** live and **talk** to the baby (hold to talk).
 - **Lullaby and noise:** built-in white, pink and brown noise and a
   lullaby, or your own uploaded songs. Fades out at the end.
-- **Alarm:** rings on the baby unit at a set time, on chosen days or once.
+- **Alarm:** rings on the baby unit at a set time, on chosen days or once,
+  with its own volume and an optional **sunrise**: the baby unit's screen
+  slowly brightens to a warm colour before the alarm.
 - **Night history:** a graph of the sound level over the last 24 hours
   (pinch to zoom, drag to move) with thresholds, notifications, battery
-  and outages, and a list of events.
+  and outages, a sleep summary (wake-ups, longest quiet stretch) and a
+  list of events.
+- **Photo on request:** the baby unit turns its camera on for a moment
+  and sends one picture, brightened in the dark.
 - **Pause notifications** for a while, or stop monitoring remotely.
 - Several parent phones per baby unit and several baby units per parent.
 - Pairing with a one-time QR code. No accounts, no e-mail addresses.
@@ -52,8 +66,31 @@ the settings.
 - The server keeps the sound level per minute and the events for one week,
   then deletes them.
 - The only files stored are the sounds parents upload themselves.
+- A photo on request is kept only in the server's memory for 5 minutes,
+  never on disk.
+- Crying recognition runs on the baby unit. The MediaPipe library tries
+  to send anonymous usage statistics to Google; the app drops them and
+  the page's Content Security Policy would block them anyway.
 - Devices identify themselves with a random secret stored on the phone.
   The database keeps only its SHA-256 hash.
+
+## Try it in 2 minutes
+
+On any computer with Docker, no phones and no HTTPS needed:
+
+```sh
+git clone https://github.com/toomaaseek/chuvicka-baby-monitor.git
+cd chuvicka-baby-monitor
+cp .env.example .env
+docker compose -f docker-compose.example.yml up
+```
+
+Open <http://localhost:8080> twice: in two different browsers, or in a
+normal and a private window (each phone keeps its identity in the
+browser's storage, so two normal windows would be the same phone). Make
+one the baby unit (it uses your computer's microphone) and the other the
+parent, pair them with the code and start monitoring. Push notifications need the
+keys from step 2 below; everything else works.
 
 ## Requirements
 
@@ -97,8 +134,12 @@ the settings.
 
    ```sh
    cp docker-compose.example.yml docker-compose.yml
-   docker compose up -d --build
+   docker compose up -d
    ```
+
+   This pulls a ready-made image (amd64 and arm64, so a Raspberry Pi works
+   too). To build it yourself, uncomment `build: .` in the compose file
+   and add `--build`.
 
    The app listens on port 8080 (bound to `127.0.0.1` in the example, so
    only the reverse proxy on the same machine can reach it).
@@ -136,6 +177,7 @@ the settings.
 
 ```sh
 npm ci --omit=dev
+npm run model   # downloads the YAMNet model for crying recognition (4 MB)
 VAPID_PUBLIC_KEY=... VAPID_PRIVATE_KEY=... VAPID_SUBJECT=mailto:you@example.com \
   node --disable-warning=ExperimentalWarning server.js
 ```
@@ -154,6 +196,7 @@ Data goes to `data/` next to `server.js` unless you set `DB`.
 | `CHUVICKA_MAX_ZVUK_MB` | `20` | Largest uploaded sound. |
 | `CHUVICKA_MAX_ZVUKY_MB` | `200` | All uploaded sounds together. |
 | `CHUVICKA_IP_HLAVICKA` | — | Header with the client address set by your reverse proxy, e.g. `x-real-ip` or `cf-connecting-ip`. |
+| `CHUVICKA_HESLO` | — | Password needed to add a new phone. A parent phone opening the QR code of a baby unit doesn't need it. Recommended for a server reachable from the internet. |
 
 ## Backup and updates
 
@@ -164,12 +207,13 @@ uploaded sounds. To copy it out for a backup:
 docker compose cp chuvicka:/data ./backup-$(date +%F)
 ```
 
-To update, pull the new code and rebuild:
+To update:
 
 ```sh
-git pull
-docker compose up -d --build
+docker compose pull && docker compose up -d
 ```
+
+(When you build yourself: `git pull && docker compose up -d --build`.)
 
 Open phones notice the new version and offer to reload. Don't restart the
 server while the baby unit is monitoring: the parent would get a
@@ -178,10 +222,11 @@ server while the baby unit is monitoring: the parent would get a
 ## Good to know
 
 - **One server is for one family** or a group of people who trust each
-  other. Anyone who can reach the address can register a phone, but that
-  alone gives no access to any baby unit: pairing needs a one-time code
-  shown on the baby unit. Uploaded sounds, however, are shared by all
-  phones on the server, and any paired parent can delete them.
+  other. Without `CHUVICKA_HESLO`, anyone who can reach the address can
+  register a phone. That alone gives no access to any baby unit (pairing
+  needs a one-time code shown on the baby unit), but they would see the
+  uploaded sounds, which are shared by all phones on the server. Set a
+  password and only people you give it to can add a phone.
 - The baby unit has to keep the app open with the screen on (the app keeps
   the screen black and locked against touches). Keep it on a charger.
   To stop a child from leaving the app, use App pinning (Android) or
@@ -214,6 +259,16 @@ Translations: the Czech text in the code is the key, the English
 dictionary is `public/js/texty-en.js`. `npm test` fails when a translation
 is missing.
 
+## Security
+
+See [SECURITY.md](SECURITY.md): what the app protects, what you need to
+take care of, and how to report a vulnerability.
+
 ## License
 
 [MIT](LICENSE)
+
+Crying recognition uses [MediaPipe Tasks Audio](https://www.npmjs.com/package/@mediapipe/tasks-audio)
+and the [YAMNet](https://ai.google.dev/edge/mediapipe/solutions/audio/audio_classifier) model,
+both by Google under the Apache License 2.0. The model is downloaded at
+build time, not stored in this repository.

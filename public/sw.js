@@ -4,7 +4,7 @@
  */
 // Při vydání nové verze zvednout spolu s package.json — změna názvu
 // mezipaměti donutí telefony stáhnout soubory znovu.
-const VERZE = "chuvicka-v0.7.0"
+const VERZE = "chuvicka-v0.8.0"
 const SOUBORY = [
   "/",
   "/app.css",
@@ -24,6 +24,10 @@ const SOUBORY = [
   "/js/nastaveni.js",
   "/js/skener.js",
   "/js/i18n.js",
+  "/js/spanek.js",
+  "/js/fotka.js",
+  "/js/plac.js",
+  "/js/rozpoznani.js",
   "/js/texty-en.js",
   "/ikony/ikona-192.png",
   "/ikony/ikona-96.png",

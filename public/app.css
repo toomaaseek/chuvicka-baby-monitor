@@ -131,6 +131,12 @@ input[type="range"]::-moz-range-thumb {
   width: var(--palec); height: var(--palec); box-sizing: border-box;
   border-radius: 50%; border: 3px solid var(--plocha); background: var(--text);
 }
+/* Posuvník se mění jen tažením za jezdec. Dotyk jinde na dráze projde
+   na okno pod ním — při posouvání nastavení prstem se dřív hodnota
+   nechtěně přeskočila tam, kam prst zrovna dopadl. */
+input[type="range"] { pointer-events: none; }
+input[type="range"]::-webkit-slider-thumb { pointer-events: auto; }
+input[type="range"]::-moz-range-thumb { pointer-events: auto; }
 input[type="range"]:focus-visible { outline: none; }
 input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--akcent); }
 input[type="range"]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 2px var(--akcent); }
@@ -155,6 +161,7 @@ select { font: inherit; color: var(--text); background: var(--plocha-2); border:
 .ukoncit-hlidani { display: grid; gap: 10px; border-top: 1px solid var(--okraj); padding-top: 14px; margin-top: 4px; }
 button.nebezpecne { background: var(--place); border-color: var(--place); color: #1a0705; }
 .souhrn { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 0.9rem; }
+.souhrn strong, .souhrn .plny { flex-basis: 100%; }
 
 canvas.graf { width: 100%; height: 180px; display: block; touch-action: pan-y; cursor: grab; }
 canvas.graf:active { cursor: grabbing; }
@@ -167,6 +174,8 @@ canvas.graf:active { cursor: grabbing; }
 .hlidani {
   position: fixed; inset: 0;
   background: #000;
+  /* Východ slunce: plynulý přechod mezi kroky po 10 s. */
+  transition: background-color 10s linear;
   display: grid; place-items: center;
   touch-action: none; user-select: none; -webkit-user-select: none;
   z-index: 10;
@@ -224,3 +233,28 @@ video.skener { width: 100%; border-radius: 12px; background: #000; aspect-ratio:
 .zvuky-seznam li { display: flex; align-items: center; gap: 8px; }
 .zvuky-seznam .nazev { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .zvuky-seznam button { padding: 8px 12px; }
+
+/* Záložky jako v docházce: lišta s vybranou záložkou zvýrazněnou,
+   při posouvání okna zůstane nahoře. */
+.zalozky {
+  display: flex; gap: 4px; padding: 4px;
+  background: var(--plocha-2); border-radius: 12px;
+  position: sticky; top: -16px; z-index: 1;
+  overflow-x: auto; scrollbar-width: none;
+  /* Zakrýt mezeru nad lištou (odsazení okna), ať pod ní neprosvítá text. */
+  box-shadow: 0 -16px 0 0 var(--plocha);
+}
+.zalozky button {
+  flex: 1 1 auto; padding: 8px 6px; border: none; border-radius: 9px;
+  background: transparent; color: var(--slabe); font-size: 0.85rem; white-space: nowrap;
+}
+.zalozky button[aria-selected="true"] { background: var(--plocha); color: var(--text); box-shadow: 0 1px 3px rgb(0 0 0 / 0.4); }
+.zalozka { display: grid; gap: 14px; }
+.zalozka[hidden] { display: none; }
+
+.mrizka-2 > .cely { grid-column: 1 / -1; }
+img.fotka { width: 100%; border-radius: 12px; background: #000; }
+
+/* Sbalené nastavení na chůvičce, když se nastavuje u rodiče. */
+details.sbalene > summary { cursor: pointer; color: var(--slabe); font-size: 0.9rem; padding: 6px 0; }
+details.sbalene[open] > summary { margin-bottom: 12px; }
