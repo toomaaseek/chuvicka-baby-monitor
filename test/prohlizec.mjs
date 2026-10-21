@@ -134,7 +134,8 @@ try {
   await rodic.locator("h1", { hasText: "Chůvička" }).waitFor()
   await dite.locator(".okno").waitFor({ state: "detached", timeout: 10000 })
   ok(true, "rodič spárovaný, okno s QR na chůvičce se samo zavřelo")
-  ok((await rodic.locator(".stitek", { hasText: "nehlídá" }).count()) === 1, "rodič vidí: připojená, nehlídá")
+  await rodic.locator(".stitek", { hasText: "nehlídá" }).waitFor({ timeout: 10000 })
+  ok(true, "rodič vidí: připojená, nehlídá")
   const verze = await rodic.locator("h1 .verze-cislo").textContent()
   ok(/^v\d+\.\d+\.\d+$/.test(verze), `rodič se spárovanou chůvičkou vidí verzi ${verze}`)
 
